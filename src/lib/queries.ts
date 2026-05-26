@@ -24,7 +24,7 @@ function toInvoiceView(row: {
     description: row.description,
     dueDate: row.dueDate ? row.dueDate.toISOString().slice(0, 10) : "",
     status: row.status.toLowerCase() as Invoice["status"],
-    paymentLink: `/pay/${row.invoiceNumber}`,
+    paymentLink: `/pay/${row.paymentLinkSlug}`,
     createdAt: row.createdAt.toISOString().slice(0, 10),
   };
 }
@@ -50,14 +50,19 @@ export async function getInvoices(): Promise<Invoice[]> {
 }
 
 /**
- * Fetch a single invoice by invoiceNumber or cuid id.
+ * Fetch a single invoice by invoiceNumber, paymentLinkSlug, or cuid id.
+ * Supports case-insensitive matching for invoiceNumber and paymentLinkSlug.
  */
 export async function getInvoiceByIdOrNumber(
   idOrNumber: string
 ): Promise<Invoice | null> {
   const row = await prisma.invoice.findFirst({
     where: {
-      OR: [{ invoiceNumber: idOrNumber }, { id: idOrNumber }],
+      OR: [
+        { id: idOrNumber },
+        { invoiceNumber: { equals: idOrNumber, mode: "insensitive" } },
+        { paymentLinkSlug: { equals: idOrNumber, mode: "insensitive" } },
+      ],
     },
   });
   if (!row) return null;
@@ -66,11 +71,16 @@ export async function getInvoiceByIdOrNumber(
 
 /**
  * Fetch a single invoice with merchant info for the pay page.
+ * Supports case-insensitive matching for invoiceNumber and paymentLinkSlug.
  */
 export async function getInvoiceWithMerchant(idOrNumber: string) {
   const row = await prisma.invoice.findFirst({
     where: {
-      OR: [{ invoiceNumber: idOrNumber }, { id: idOrNumber }],
+      OR: [
+        { id: idOrNumber },
+        { invoiceNumber: { equals: idOrNumber, mode: "insensitive" } },
+        { paymentLinkSlug: { equals: idOrNumber, mode: "insensitive" } },
+      ],
     },
     include: { merchant: true },
   });
