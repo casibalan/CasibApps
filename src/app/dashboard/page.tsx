@@ -4,19 +4,24 @@ import { BalanceCard } from "@/components/app-shell/BalanceCard";
 import { BottomNav } from "@/components/app-shell/BottomNav";
 import { StatCard } from "@/components/app-shell/StatCard";
 import { InvoiceList } from "@/components/invoices/InvoiceList";
-import { dashboardStats, demoInvoices } from "@/lib/demo-data";
+import { getDashboardStats, getInvoices } from "@/lib/queries";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const [stats, invoices] = await Promise.all([
+    getDashboardStats(),
+    getInvoices(),
+  ]);
+
   return (
     <AppScreen>
       <AppHeader title="Merchant dashboard" eyebrow="CasibApps" />
       <BalanceCard />
       <section className="mt-4 grid gap-3 md:grid-cols-3">
-        {dashboardStats.map((stat) => (
+        {stats.map((stat) => (
           <StatCard key={stat.label} stat={stat} />
         ))}
       </section>
-      <InvoiceList invoices={demoInvoices} />
+      <InvoiceList invoices={invoices} />
       <BottomNav />
     </AppScreen>
   );

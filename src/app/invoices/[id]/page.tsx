@@ -1,10 +1,11 @@
+import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/app-shell/AppHeader";
 import { AppScreen } from "@/components/app-shell/AppScreen";
 import { BottomNav } from "@/components/app-shell/BottomNav";
 import { InvoiceDetailCard } from "@/components/invoices/InvoiceDetailCard";
 import { PaymentLinkCard } from "@/components/invoices/PaymentLinkCard";
 import { SettlementCard } from "@/components/invoices/SettlementCard";
-import { getInvoiceById } from "@/lib/demo-data";
+import { getInvoiceByIdOrNumber } from "@/lib/queries";
 
 type InvoicePageProps = {
   params: Promise<{ id: string }>;
@@ -12,7 +13,9 @@ type InvoicePageProps = {
 
 export default async function InvoicePage({ params }: InvoicePageProps) {
   const { id } = await params;
-  const invoice = getInvoiceById(id);
+  const invoice = await getInvoiceByIdOrNumber(id);
+
+  if (!invoice) notFound();
 
   return (
     <AppScreen>
