@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { InvoicePreview } from "./InvoicePreview";
 
 export function HeroSection() {
@@ -14,18 +15,18 @@ export function HeroSection() {
           Create invoices, accept USDC payments, and settle transactions on Arc using Circle-powered infrastructure.
         </p>
         <div id="checkout" className="mt-9 flex flex-col gap-3 sm:flex-row">
-          <a
-            href="#flow"
+          <Link
+            href="/invoices/new"
             className="inline-flex min-h-12 items-center justify-center rounded-full bg-cyan-300 px-6 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-cyan-950/40 transition hover:bg-cyan-200"
           >
             Create Invoice
-          </a>
-          <a
-            href="#features"
+          </Link>
+          <Link
+            href="/dashboard"
             className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/15 px-6 py-3 text-sm font-bold text-white transition hover:border-white/35 hover:bg-white/10"
           >
             View Demo
-          </a>
+          </Link>
         </div>
       </div>
 

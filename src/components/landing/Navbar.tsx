@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export function Navbar() {
   return (
     <nav className="flex items-center justify-between border-b border-white/10 pb-5">
@@ -18,12 +20,12 @@ export function Navbar() {
           Checkout
         </a>
       </div>
-      <a
-        href="#checkout"
+      <Link
+        href="/dashboard"
         className="rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:border-cyan-300 hover:text-cyan-200"
       >
         Launch MVP
-      </a>
+      </Link>
     </nav>
   );
 }
