@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "contract:build": "forge build",
+    "contract:deploy:arc": "forge script script/DeployCasibInvoiceEscrow.s.sol:DeployCasibInvoiceEscrow --rpc-url $ARC_RPC_URL --broadcast"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
