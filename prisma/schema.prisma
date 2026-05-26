@@ -1,0 +1,62 @@
+// CasibApps Prisma Schema
+// USDC invoicing and checkout platform
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum InvoiceStatus {
+  DRAFT
+  PENDING
+  PAID
+  EXPIRED
+  CANCELLED
+}
+
+enum SettlementStatus {
+  NOT_STARTED
+  PENDING
+  SETTLED
+  FAILED
+}
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+model Merchant {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  businessName String?
+  walletAddress String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  invoices Invoice[]
+}
+
+model Invoice {
+  id               String           @id @default(cuid())
+  invoiceNumber    String           @unique
+  merchantId       String
+  merchant         Merchant         @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  clientName       String
+  clientEmail      String?
+  description      String
+  amount           Decimal          @db.Decimal(18, 6)
+  currency         String           @default("USDC")
+  status           InvoiceStatus    @default(PENDING)
+  dueDate          DateTime?
+  paymentLinkSlug  String           @unique
+  arcTxHash        String?
+  settlementStatus SettlementStatus @default(NOT_STARTED)
+  paidAt           DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+}
