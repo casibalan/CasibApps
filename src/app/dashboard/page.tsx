@@ -6,6 +6,7 @@ import { StatCard } from "@/components/app-shell/StatCard";
 import { InvoiceList } from "@/components/invoices/InvoiceList";
 import { getDashboardStats, getInvoices } from "@/lib/queries";
 
+export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const [stats, invoices] = await Promise.all([
     getDashboardStats(),

@@ -10,6 +10,7 @@ type PayPageProps = {
   params: Promise<{ id: string }>;
 };
 
+export const dynamic = "force-dynamic";
 export default async function PayPage({ params }: PayPageProps) {
   const { id } = await params;
   const data = await getInvoiceWithMerchant(id);

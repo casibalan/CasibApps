@@ -11,6 +11,7 @@ type InvoicePageProps = {
   params: Promise<{ id: string }>;
 };
 
+export const dynamic = "force-dynamic";
 export default async function InvoicePage({ params }: InvoicePageProps) {
   const { id } = await params;
   const invoice = await getInvoiceByIdOrNumber(id);
