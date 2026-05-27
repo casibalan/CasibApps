@@ -13,10 +13,7 @@ function toInvoiceView(row: {
   description: string;
   dueDate: Date | null;
   status: string;
-  settlementStatus: string;
   paymentLinkSlug: string;
-  arcTxHash: string | null;
-  paidAt: Date | null;
   createdAt: Date;
 }): Invoice {
   return {
@@ -27,11 +24,8 @@ function toInvoiceView(row: {
     description: row.description,
     dueDate: row.dueDate ? row.dueDate.toISOString().slice(0, 10) : "",
     status: row.status.toLowerCase() as Invoice["status"],
-    settlementStatus: row.settlementStatus.toLowerCase() as Invoice["settlementStatus"],
     paymentLink: `/pay/${row.paymentLinkSlug}`,
     createdAt: row.createdAt.toISOString().slice(0, 10),
-    paidAt: row.paidAt ? row.paidAt.toISOString() : undefined,
-    arcTxHash: row.arcTxHash ?? undefined,
   };
 }
 
@@ -94,7 +88,6 @@ export async function getInvoiceWithMerchant(idOrNumber: string) {
   return {
     invoice: toInvoiceView(row),
     merchantName: row.merchant.businessName ?? row.merchant.name,
-    merchantWalletAddress: row.merchant.walletAddress,
   };
 }
 
