@@ -242,10 +242,24 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
   // -------------------------------------------------------------------------
   useEffect(() => {
     let cancelled = false;
+    let loginCompleteTimer: ReturnType<typeof setTimeout> | null = null;
 
     const initSdk = async () => {
       try {
         const { W3SSdk } = await import("@circle-fin/w3s-pw-web-sdk");
+
+        // Detect if this page load is an OAuth callback from Google.
+        // The SDK reads the hash internally, but we need to avoid
+        // overwriting the processing state with "ready".
+        const hasOAuthCallback =
+          window.location.hash.includes("state=") ||
+          window.location.hash.includes("id_token=") ||
+          window.location.hash.includes("access_token=");
+
+        if (hasOAuthCallback && !cancelled) {
+          setStep("logged-in");
+          setStatusMsg("Completing Google login...");
+        }
 
         // Restore login config: prefer localStorage, fall back to cookies.
         // localStorage is more reliable across OAuth redirects on mobile.
@@ -280,11 +294,28 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
         if (restoredDeviceEncryptionKey)
           setDeviceEncryptionKey(restoredDeviceEncryptionKey);
 
+        let loginCompleteDidFire = false;
+
         const onLoginComplete = (error: unknown, result: unknown) => {
+          loginCompleteDidFire = true;
+          if (loginCompleteTimer) {
+            clearTimeout(loginCompleteTimer);
+            loginCompleteTimer = null;
+          }
           if (cancelled) return;
 
+          console.log("[CircleLogin] onLoginComplete fired", {
+            hasError: Boolean(error),
+            errorMessage:
+              error instanceof Error ? error.message : undefined,
+            resultKeys:
+              result && typeof result === "object"
+                ? Object.keys(result as Record<string, unknown>)
+                : null,
+          });
+
           if (error) {
-            const err = error as { message?: string };
+            const err = error as { message?: string; code?: number };
             // Don't show error if it's just "no login in progress" on fresh load
             if (err.message?.includes("No login")) return;
             setErrorMsg(err.message ?? "Login failed");
@@ -303,6 +334,13 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
 
             // Auto-proceed with post-login flow
             void handlePostLogin(loginData);
+          } else {
+            // Result exists but no userToken — unexpected response
+            setErrorMsg(
+              "Circle login returned an unexpected response. Check console result keys."
+            );
+            setStep("error");
+            return;
           }
         };
 
@@ -329,12 +367,31 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
 
         sdkRef.current = sdk;
 
-        // Get deviceId
+        // If we detected an OAuth callback, start a 5-second timeout.
+        // If onLoginComplete hasn't fired by then, something went wrong.
+        if (hasOAuthCallback) {
+          loginCompleteTimer = setTimeout(() => {
+            if (!loginCompleteDidFire && !cancelled) {
+              console.error(
+                "[CircleLogin] OAuth callback detected but onLoginComplete did not fire within 5s"
+              );
+              setErrorMsg(
+                "Circle OAuth callback was detected, but SDK did not complete login."
+              );
+              setStep("error");
+            }
+          }, 5000);
+        }
+
+        // Get deviceId — but do NOT overwrite step if we're processing
+        // an OAuth callback. The SDK will call onLoginComplete instead.
         const id = await sdk.getDeviceId();
         if (!cancelled) {
           setDeviceId(id);
-          setStep("ready");
-          setStatusMsg("Ready to sign in.");
+          if (!hasOAuthCallback) {
+            setStep("ready");
+            setStatusMsg("Ready to sign in.");
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -350,6 +407,9 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
     void initSdk();
     return () => {
       cancelled = true;
+      if (loginCompleteTimer) {
+        clearTimeout(loginCompleteTimer);
+      }
     };
   }, [appId, googleClientId, handlePostLogin]);
 
