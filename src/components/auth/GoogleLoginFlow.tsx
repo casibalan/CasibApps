@@ -57,6 +57,19 @@ type GoogleLoginFlowProps = {
 };
 
 // ---------------------------------------------------------------------------
+// Circle SDK OAuth state — keys the SDK writes to localStorage before the
+// Google redirect and reads back on return. We mirror them to sessionStorage
+// and cookies so we can restore them if localStorage is wiped on iOS Safari
+// or in private/incognito sessions.
+// ---------------------------------------------------------------------------
+const CIRCLE_OAUTH_STATE_KEYS = [
+  "socialLoginProvider",
+  "state",
+  "nonce",
+] as const;
+const CIRCLE_OAUTH_BACKUP_PREFIX = "casib.circle.oauth.";
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -259,6 +272,51 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
         if (hasOAuthCallback && !cancelled) {
           setStep("logged-in");
           setStatusMsg("Completing Google login...");
+        }
+
+        // Restore Circle SDK OAuth state into localStorage before the SDK
+        // is constructed. The SDK reads these keys from localStorage to
+        // validate the OAuth callback — if they're missing (e.g. iOS
+        // Safari evicted them across the redirect), onLoginComplete will
+        // never fire. We mirror them to sessionStorage and cookies before
+        // the redirect, so we can put them back here.
+        if (hasOAuthCallback) {
+          const restored: Record<string, boolean> = {};
+
+          for (const key of CIRCLE_OAUTH_STATE_KEYS) {
+            if (window.localStorage.getItem(key)) {
+              restored[key] = true;
+              continue;
+            }
+
+            // Try sessionStorage first
+            const sessionVal = window.sessionStorage.getItem(
+              CIRCLE_OAUTH_BACKUP_PREFIX + key
+            );
+            if (sessionVal) {
+              window.localStorage.setItem(key, sessionVal);
+              restored[key] = true;
+              continue;
+            }
+
+            // Fall back to cookie
+            const cookieVal = getCookie(
+              CIRCLE_OAUTH_BACKUP_PREFIX + key
+            ) as string | undefined;
+            if (cookieVal) {
+              window.localStorage.setItem(key, cookieVal);
+              restored[key] = true;
+              continue;
+            }
+
+            restored[key] = false;
+          }
+
+          console.log("[CircleLogin] restored oauth state", {
+            provider: Boolean(restored.socialLoginProvider),
+            state: Boolean(restored.state),
+            nonce: Boolean(restored.nonce),
+          });
         }
 
         // Restore login config: prefer localStorage, fall back to cookies.
@@ -467,7 +525,53 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
       const { SocialLoginProvider } = await import(
         "@circle-fin/w3s-pw-web-sdk/dist/src/types"
       );
-      sdk.performLogin(SocialLoginProvider.GOOGLE);
+
+      // Patch localStorage.setItem so that whatever OAuth state the SDK
+      // writes immediately before the Google redirect (socialLoginProvider,
+      // state, nonce) is mirrored to sessionStorage and a cookie. On the
+      // return trip, initSdk restores these values into localStorage so
+      // the SDK can validate the callback and fire onLoginComplete.
+      const originalSetItem = window.localStorage.setItem.bind(
+        window.localStorage
+      );
+      const oauthKeySet = new Set<string>(CIRCLE_OAUTH_STATE_KEYS);
+      window.localStorage.setItem = function patchedSetItem(
+        key: string,
+        value: string
+      ) {
+        try {
+          if (oauthKeySet.has(key)) {
+            try {
+              window.sessionStorage.setItem(
+                CIRCLE_OAUTH_BACKUP_PREFIX + key,
+                value
+              );
+            } catch {
+              // sessionStorage may be unavailable; ignore
+            }
+            try {
+              setCookie(CIRCLE_OAUTH_BACKUP_PREFIX + key, value, {
+                path: "/",
+                sameSite: "lax",
+              });
+            } catch {
+              // cookie write may fail; ignore
+            }
+          }
+        } catch {
+          // never let mirroring break the SDK call
+        }
+        return originalSetItem(key, value);
+      };
+
+      try {
+        sdk.performLogin(SocialLoginProvider.GOOGLE);
+      } finally {
+        // Restore the original setItem if execution continues
+        // (performLogin usually triggers a top-level redirect, but if it
+        // doesn't, we don't want to keep intercepting writes).
+        window.localStorage.setItem = originalSetItem;
+      }
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to start login.";
