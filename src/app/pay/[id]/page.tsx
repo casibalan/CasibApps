@@ -4,7 +4,9 @@ import { AppScreen } from "@/components/app-shell/AppScreen";
 import { PaymentSummary } from "@/components/payments/PaymentSummary";
 import { PayInvoiceFlow } from "@/components/payments/PayInvoiceFlow";
 import { TrustIndicators } from "@/components/payments/TrustIndicators";
+import { CircleWalletStatus } from "@/components/circle/CircleWalletStatus";
 import { getInvoiceWithMerchant } from "@/lib/queries";
+import { getCircleEnvStatus } from "@/lib/circle";
 
 type PayPageProps = {
   params: Promise<{ id: string }>;
@@ -42,8 +44,9 @@ export default async function PayPage({ params }: PayPageProps) {
     );
   }
 
-  // If merchant wallet is not configured, block payment
+  // If merchant wallet is not configured, block payment and show Circle status
   if (!merchantWalletAddress) {
+    const circleEnv = getCircleEnvStatus();
     return (
       <AppScreen>
         <AppHeader title="USDC checkout" eyebrow="Customer payment" />
@@ -55,10 +58,15 @@ export default async function PayPage({ params }: PayPageProps) {
               Merchant wallet not configured
             </h3>
             <p className="mt-2 text-sm text-slate-300">
-              This merchant has not set up their wallet address yet. Payment
-              cannot be processed until the merchant completes onboarding.
+              This merchant has not set up their Circle Wallet yet. Payment
+              cannot be processed until the merchant completes wallet onboarding.
             </p>
           </div>
+          <CircleWalletStatus
+            walletAddress={null}
+            circleConfigured={circleEnv.configured}
+            circleConfigMissing={circleEnv.missing}
+          />
           <TrustIndicators />
         </div>
       </AppScreen>

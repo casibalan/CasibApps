@@ -1,6 +1,6 @@
 # CasibApps Project State
 
-Last updated: 2026-05-27
+Last updated: 2026-05-27 (Circle Social Login + Google OAuth integrated)
 
 ## Current Rule
 
@@ -38,6 +38,8 @@ Branch: main
 - Solidity
 - Arc Testnet
 - viem for contract calls
+- @circle-fin/w3s-pw-web-sdk (client-side Web SDK for wallet onboarding/signing)
+- @circle-fin/user-controlled-wallets (server-side Node.js SDK for user/session/challenge management)
 
 ## Completed
 
@@ -108,10 +110,133 @@ Completed (this session):
 - No fake/mock payment. Real contract interaction only.
 
 Not done yet:
-- Circle Wallet SDK is not connected (planned as future wallet layer).
 - Vercel production env must be completed.
-- Server-side onchain verification (read isPaid from contract) not yet added — currently trusts client tx hash.
-- Multi-merchant auth/onboarding not yet implemented (plan below).
+- Arc Testnet chain support in Circle Wallets needs verification.
+
+## Circle Social Login Integration (NEW)
+
+### What was implemented
+
+- `/login` page with real "Continue with Google" button using Circle Social Login.
+- Circle Web SDK (`@circle-fin/w3s-pw-web-sdk`) handles the full OAuth flow.
+- After Google login, Circle returns `userToken` + `encryptionKey`.
+- Server-side API route (`/api/circle/social`) proxies Circle API calls (keeps CIRCLE_API_KEY server-side).
+- After login: user is initialized, wallet is created via challenge execution, wallet address is stored in Merchant.walletAddress.
+- Cookie-based merchant session (`casib_merchant_id`) for lightweight auth.
+- Multi-merchant support: each Google login creates/finds a unique Merchant record.
+- Dashboard shows session indicator with sign-in/sign-out.
+- `/logout` clears session and redirects to login.
+
+### New files
+
+- `src/app/login/page.tsx` — Login route (server component, checks session)
+- `src/app/logout/page.tsx` — Logout route (clears session cookie)
+- `src/app/api/circle/social/route.ts` — API route for Circle social login endpoints
+- `src/components/auth/GoogleLoginFlow.tsx` — Client component: full Circle Social Login flow
+- `src/components/auth/LoginPageContent.tsx` — Client wrapper for login page UI
+- `src/lib/auth-actions.ts` — Server actions for merchant session + upsert
+
+### Environment variables required
+
+```
+CIRCLE_API_KEY=              # Server-side only. From Circle Developer Console.
+NEXT_PUBLIC_CIRCLE_APP_ID=   # Circle App ID (safe for client).
+```
+
+Google OAuth Web Client ID is configured inside Circle Console — not needed in app env.
+
+### Flow
+
+1. User visits `/login`
+2. Clicks "Continue with Google"
+3. Circle Web SDK gets deviceId → exchanges for deviceToken via `/api/circle/social`
+4. SDK redirects to Google OAuth
+5. After redirect, SDK returns userToken + encryptionKey
+6. Server action creates/finds Merchant record
+7. Server calls Circle `initializeUser` → gets challengeId
+8. SDK executes challenge (wallet creation)
+9. Wallet address is fetched and stored in Merchant.walletAddress
+10. User is redirected to dashboard
+
+## Circle Wallet SDK Integration
+
+### Packages installed
+
+- `@circle-fin/w3s-pw-web-sdk` — Client-side Web SDK (PIN entry, security questions, key management in secure UI)
+- `@circle-fin/user-controlled-wallets` — Server-side Node.js SDK (create users, sessions, challenges, query wallets)
+
+### Environment variables required
+
+```
+CIRCLE_API_KEY=        # API key from Circle Developer Console
+CIRCLE_APP_ID=         # App ID from Circle Developer Console
+```
+
+Google OAuth Web Client ID is configured inside Circle Console.
+Entity Secret is not used for User-Controlled Wallets social login flow.
+
+### Architecture
+
+```
+Client (browser)                    Server (Next.js)                Circle API
+─────────────────                   ────────────────                ──────────
+CircleWalletSetup.tsx               circle-actions.ts               
+  │                                   │                              
+  ├─ createCircleUser() ──────────────┼─ POST /v1/w3s/users ────────→
+  ├─ acquireCircleSession() ──────────┼─ POST /v1/w3s/users/token ──→
+  ├─ initializeCircleWallet() ────────┼─ POST /v1/w3s/user/pin/... ─→
+  │                                   │                              
+  ├─ W3SSdk.execute(challengeId) ─────┼──────────────────────────────→ (secure iframe)
+  │   (user sets PIN, security Qs)    │                              
+  │                                   │                              
+  └─ syncCircleWalletAddress() ───────┼─ GET /v1/w3s/wallets ───────→
+                                      └─ UPDATE Merchant.walletAddress
+```
+
+### Files added/modified
+
+New files:
+- `src/lib/circle.ts` — Server-side Circle client initialization + env validation
+- `src/lib/circle-actions.ts` — Server actions for full wallet onboarding flow
+- `src/components/circle/CircleWalletSetup.tsx` — Client component for wallet creation UX
+- `src/components/circle/CircleWalletStatus.tsx` — Wallet status display component
+- `src/app/wallet/page.tsx` — Merchant wallet onboarding page
+- `src/app/api/circle/wallet-status/route.ts` — API route for polling wallet status
+
+Modified files:
+- `src/app/dashboard/page.tsx` — Shows Circle wallet status card
+- `src/app/pay/[id]/page.tsx` — Shows Circle status when merchant wallet missing
+- `package.json` — Added Circle SDK dependencies
+- `.env.example` — Documented Circle env vars
+
+### What works now
+
+- Full Circle SDK integration code is in place and builds successfully.
+- App degrades gracefully when Circle env vars are missing (shows clear admin notice).
+- Dashboard shows wallet configuration status.
+- Payment page shows Circle wallet status when merchant wallet is not configured.
+- `/wallet` page provides the full onboarding flow UI.
+- Server-side Arc verification (viem) remains untouched and active.
+- Multi-merchant wallet resolution (invoice → merchant → walletAddress) preserved.
+
+### What still needs production credentials/config
+
+- CIRCLE_API_KEY and CIRCLE_APP_ID must be obtained from Circle Developer Console.
+- Arc Testnet chain support in Circle Wallets needs verification.
+- Production auth (NextAuth/Clerk) needed for multi-merchant — currently uses first merchant from DB as MVP bridge.
+
+### Server-side Arc verification remains active
+
+The existing verified payment flow is unchanged:
+1. Customer approves USDC via wallet
+2. Customer calls payInvoice on CasibInvoiceEscrow contract
+3. Server fetches tx receipt from Arc Testnet RPC
+4. Server decodes InvoicePaid event and verifies args
+5. Server calls isPaid(invoiceId) on contract
+6. Only then marks invoice as PAID in database
+
+Circle SDK provides the wallet/onboarding/signing UX layer.
+viem/server verification remains the source of truth.
 
 ## Security
 
@@ -122,11 +247,15 @@ The Neon database URL was exposed in chat before. Rotate the Neon password befor
 ## Next Exact Workflow
 
 1. Rotate Neon password and update DATABASE_URL locally and in Vercel.
-2. Add Vercel env vars: DATABASE_URL, ARC_RPC_URL, USDC_TOKEN_ADDRESS, CASIB_INVOICE_ESCROW_ADDRESS.
+2. Add Vercel env vars: DATABASE_URL, ARC_RPC_URL, USDC_TOKEN_ADDRESS, CASIB_INVOICE_ESCROW_ADDRESS, CIRCLE_API_KEY, CIRCLE_APP_ID.
 3. Set merchant walletAddress in the database for the seed merchant (via Prisma Studio or a migration script).
 4. Test the full /pay/[id] flow on Arc Testnet with MetaMask.
-5. Add server-side onchain verification: after confirmPayment, read isPaid(invoiceId) from the contract to verify before marking PAID.
-6. Integrate Circle Wallet SDK as the wallet/onboarding layer.
+5. ~~Add server-side onchain verification~~ — DONE (confirmPayment in payment-actions.ts).
+6. ~~Integrate Circle Wallet SDK~~ — DONE (see Circle Wallet SDK Integration section above).
+7. Obtain Circle Developer Console credentials (CIRCLE_API_KEY, CIRCLE_APP_ID).
+8. Test Circle wallet onboarding flow end-to-end on /wallet page.
+9. Verify Arc Testnet chain support in Circle Wallets.
+10. Add production auth layer (NextAuth/Clerk) for multi-merchant support.
 
 ## Multi-Merchant Onboarding Plan (Milestone 3)
 

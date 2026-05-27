@@ -30,11 +30,22 @@ function toInvoiceView(row: {
 }
 
 /**
- * Fetch the first merchant (single-tenant for now).
+ * Fetch the first merchant (single-tenant fallback).
+ * For multi-merchant, use getMerchantById with the session merchantId.
  */
 export async function getMerchant() {
   const merchant = await prisma.merchant.findFirst({
     orderBy: { createdAt: "asc" },
+  });
+  return merchant;
+}
+
+/**
+ * Fetch a merchant by ID (for authenticated sessions).
+ */
+export async function getMerchantById(id: string) {
+  const merchant = await prisma.merchant.findUnique({
+    where: { id },
   });
   return merchant;
 }
