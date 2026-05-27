@@ -264,10 +264,31 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
         // Detect if this page load is an OAuth callback from Google.
         // The SDK reads the hash internally, but we need to avoid
         // overwriting the processing state with "ready".
+        // Google may deliver the response in either the hash (implicit /
+        // id_token flow) or the query string (authorization code flow),
+        // so check both.
+        const hashParams = new URLSearchParams(
+          window.location.hash.slice(1)
+        );
+        const searchParams = new URLSearchParams(window.location.search);
+
         const hasOAuthCallback =
-          window.location.hash.includes("state=") ||
-          window.location.hash.includes("id_token=") ||
-          window.location.hash.includes("access_token=");
+          hashParams.has("state") ||
+          hashParams.has("id_token") ||
+          hashParams.has("access_token") ||
+          searchParams.has("state") ||
+          searchParams.has("code") ||
+          searchParams.has("error");
+
+        if (hasOAuthCallback) {
+          // Sanitized callback shape — keys only, never values.
+          console.log("[CircleLogin] callback url shape", {
+            hasHash: Boolean(window.location.hash),
+            hasSearch: Boolean(window.location.search),
+            hashKeys: Array.from(hashParams.keys()),
+            searchKeys: Array.from(searchParams.keys()),
+          });
+        }
 
         if (hasOAuthCallback && !cancelled) {
           setStep("logged-in");
