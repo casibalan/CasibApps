@@ -22,6 +22,9 @@ export default async function PayPage({ params }: PayPageProps) {
       <AppHeader title="USDC checkout" eyebrow="Customer payment" />
       <div className="space-y-4">
         <PaymentSummary invoice={data.invoice} merchantName={data.merchantName} />
+        <button className="w-full rounded-full bg-cyan-300 px-5 py-4 text-sm font-black text-slate-950 shadow-lg shadow-cyan-950/40 transition hover:bg-cyan-200">
+          Start checkout
+        </button>
         <TrustIndicators />
         <PaymentStatusCard />
       </div>
