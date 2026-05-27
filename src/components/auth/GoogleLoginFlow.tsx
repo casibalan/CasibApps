@@ -256,6 +256,7 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
   useEffect(() => {
     let cancelled = false;
     let loginCompleteTimer: ReturnType<typeof setTimeout> | null = null;
+    let messageListener: ((event: MessageEvent) => void) | null = null;
 
     const initSdk = async () => {
       try {
@@ -427,7 +428,53 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
         if (restoredDeviceEncryptionKey)
           setDeviceEncryptionKey(restoredDeviceEncryptionKey);
 
+        // Log the socialLoginProvider value the SDK will read on init.
+        // The SDK only enters its hash-handling branch when this is "Google".
+        if (hasOAuthCallback) {
+          console.log("[CircleLogin] socialLoginProvider snapshot", {
+            value: window.localStorage.getItem("socialLoginProvider"),
+          });
+        }
+
         let loginCompleteDidFire = false;
+
+        // Diagnostic: capture postMessage events from Circle's iframe so
+        // we can see whether the iframe ever loads and posts back. The
+        // SDK uses postMessage to deliver onSocialLoginVerified — if the
+        // iframe is blocked (CSP, third-party cookies, network), this
+        // listener will be silent and onLoginComplete never fires.
+        // Filter to circle/wallet origins to avoid noise from analytics.
+        messageListener = (event: MessageEvent) => {
+          try {
+            const origin = event.origin || "";
+            if (!/circle|wallet/i.test(origin)) return;
+
+            const data = event.data;
+            const dataKeys =
+              data && typeof data === "object"
+                ? Object.keys(data as Record<string, unknown>)
+                : [];
+
+            const eventName =
+              data && typeof data === "object"
+                ? (data as Record<string, unknown>).eventName
+                : undefined;
+            const type =
+              data && typeof data === "object"
+                ? (data as Record<string, unknown>).type
+                : undefined;
+
+            console.log("[CircleLogin] sdk message", {
+              origin,
+              dataKeys,
+              eventName,
+              type,
+            });
+          } catch {
+            // never let diagnostics break the SDK
+          }
+        };
+        window.addEventListener("message", messageListener);
 
         const onLoginComplete = (error: unknown, result: unknown) => {
           loginCompleteDidFire = true;
@@ -500,20 +547,23 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
 
         sdkRef.current = sdk;
 
-        // If we detected an OAuth callback, start a 5-second timeout.
-        // If onLoginComplete hasn't fired by then, something went wrong.
+        // If we detected an OAuth callback, start a 12-second timeout.
+        // The SDK has its own internal 10s "Network error" timeout in
+        // verifyTokenViaService; bumping ours past that gives the SDK
+        // a chance to surface its own error through onLoginComplete
+        // before we declare the callback dead.
         if (hasOAuthCallback) {
           loginCompleteTimer = setTimeout(() => {
             if (!loginCompleteDidFire && !cancelled) {
               console.error(
-                "[CircleLogin] OAuth callback detected but onLoginComplete did not fire within 5s"
+                "[CircleLogin] OAuth callback detected but onLoginComplete did not fire within 12s"
               );
               setErrorMsg(
                 "Circle OAuth callback was detected, but SDK did not complete login."
               );
               setStep("error");
             }
-          }, 5000);
+          }, 12000);
         }
 
         // Get deviceId — but do NOT overwrite step if we're processing
@@ -542,6 +592,10 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
       cancelled = true;
       if (loginCompleteTimer) {
         clearTimeout(loginCompleteTimer);
+      }
+      if (messageListener) {
+        window.removeEventListener("message", messageListener);
+        messageListener = null;
       }
     };
   }, [appId, googleClientId, handlePostLogin]);
