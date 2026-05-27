@@ -37,6 +37,11 @@ type SetupStep =
   | "success"
   | "error";
 
+type SetupNotice = {
+  tone: "info" | "warning";
+  text: string;
+};
+
 type CircleWalletSetupProps = {
   merchantId: string;
   merchantName: string;
@@ -54,14 +59,16 @@ export function CircleWalletSetup({
 }: CircleWalletSetupProps) {
   const [step, setStep] = useState<SetupStep>("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [notice, setNotice] = useState<SetupNotice | null>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
 
   const handleSetupWallet = useCallback(async () => {
     setErrorMsg(null);
+    setNotice(null);
     setStep("creating-user");
 
     try {
-      // Step 1: Create Circle user
+      // Step 1: Create Circle user (idempotent — existing users return success)
       const userResult = await createCircleUser(merchantId);
       if (!userResult.success) {
         throw new Error(userResult.error ?? "Failed to create Circle user.");
@@ -76,45 +83,62 @@ export function CircleWalletSetup({
 
       const { userToken, encryptionKey, appId } = sessionResult.data;
 
-      // Step 3: Initialize wallet challenge
+      // Step 3: Initialize wallet challenge — idempotent. If the user has
+      // already completed wallet setup (existing Circle account or returning
+      // session), `alreadyInitialized` will be true and we skip the SDK
+      // challenge entirely.
       setStep("initializing-wallet");
       const walletResult = await initializeCircleWallet(merchantId);
       if (!walletResult.success || !walletResult.data) {
         throw new Error(walletResult.error ?? "Failed to initialize wallet.");
       }
 
-      const { challengeId } = walletResult.data;
+      const { challengeId, alreadyInitialized } = walletResult.data;
 
-      // Step 4: Execute challenge with Circle Web SDK
-      setStep("executing-challenge");
-
-      // Dynamic import to avoid SSR issues with the Web SDK
-      const { W3SSdk } = await import("@circle-fin/w3s-pw-web-sdk");
-
-      const sdk = new W3SSdk();
-      sdk.setAppSettings({ appId });
-      sdk.setAuthentication({ userToken, encryptionKey });
-
-      // Execute the challenge — this opens Circle's secure UI
-      await new Promise<void>((resolve, reject) => {
-        sdk.execute(challengeId, (error, result) => {
-          if (error) {
-            reject(new Error(error.message ?? "Challenge execution failed."));
-            return;
-          }
-          if (result?.status === "COMPLETE") {
-            resolve();
-          } else {
-            reject(
-              new Error(
-                `Challenge ended with status: ${result?.status ?? "UNKNOWN"}`
-              )
-            );
-          }
+      if (alreadyInitialized) {
+        // No challenge needed — user has a Circle wallet from a previous
+        // session or another device. Just surface the existing address.
+        setNotice({
+          tone: "info",
+          text: "Wallet account already exists. Continuing setup...",
         });
-      });
+      } else if (challengeId) {
+        // Step 4: Execute challenge with Circle Web SDK (first-time setup)
+        setStep("executing-challenge");
 
-      // Step 5: Sync wallet address from Circle to database
+        const { W3SSdk } = await import("@circle-fin/w3s-pw-web-sdk");
+
+        const sdk = new W3SSdk();
+        sdk.setAppSettings({ appId });
+        sdk.setAuthentication({ userToken, encryptionKey });
+
+        // Execute the challenge — this opens Circle's secure UI
+        await new Promise<void>((resolve, reject) => {
+          sdk.execute(challengeId, (error, result) => {
+            if (error) {
+              reject(new Error(error.message ?? "Challenge execution failed."));
+              return;
+            }
+            if (result?.status === "COMPLETE") {
+              resolve();
+            } else {
+              reject(
+                new Error(
+                  `Challenge ended with status: ${result?.status ?? "UNKNOWN"}`
+                )
+              );
+            }
+          });
+        });
+      } else {
+        throw new Error(
+          "Circle did not return a challenge or existing wallet."
+        );
+      }
+
+      // Step 5: Sync wallet address from Circle to database. This runs
+      // for both first-time setup AND alreadyInitialized — it pulls the
+      // existing wallet address into the merchant record either way.
       setStep("syncing");
       const syncResult = await syncCircleWalletAddress(merchantId);
       if (!syncResult.success) {
@@ -124,9 +148,16 @@ export function CircleWalletSetup({
       if (syncResult.data?.address) {
         setWalletAddress(syncResult.data.address);
         onWalletCreated?.(syncResult.data.address);
+        setNotice(null);
         setStep("success");
+      } else if (alreadyInitialized) {
+        // The user has a Circle account but Circle hasn't surfaced a
+        // wallet for this app/blockchain yet. Tell them to retry; this
+        // typically resolves once Circle finishes provisioning.
+        throw new Error(
+          "Your Circle account exists, but no wallet is available yet for this app. Try again in a moment."
+        );
       } else {
-        // Wallet may still be provisioning
         throw new Error(
           "Wallet created but address not yet available. Please refresh in a moment."
         );
@@ -135,6 +166,7 @@ export function CircleWalletSetup({
       const message =
         err instanceof Error ? err.message : "Wallet setup failed.";
       setErrorMsg(message);
+      setNotice(null);
       setStep("error");
     }
   }, [merchantId, onWalletCreated]);
@@ -209,6 +241,18 @@ export function CircleWalletSetup({
         <p className="text-center text-xs text-cyan-300 animate-pulse">
           Complete the PIN and security setup in the Circle popup.
         </p>
+      )}
+
+      {notice && (
+        <div
+          className={
+            notice.tone === "warning"
+              ? "rounded-xl bg-amber-400/10 border border-amber-300/20 p-3 text-xs text-amber-200"
+              : "rounded-xl bg-cyan-400/10 border border-cyan-300/20 p-3 text-xs text-cyan-200"
+          }
+        >
+          <p>{notice.text}</p>
+        </div>
       )}
 
       {errorMsg && (

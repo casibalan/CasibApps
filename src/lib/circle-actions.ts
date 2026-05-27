@@ -43,6 +43,67 @@ export type CircleWalletInfo = {
 };
 
 // ---------------------------------------------------------------------------
+// Internal: parse Circle error code from a thrown error
+// ---------------------------------------------------------------------------
+
+/**
+ * Best-effort extraction of the numeric Circle error code from a thrown error.
+ * The Circle Node SDK uses axios under the hood, so the code can sit on
+ * `error.code`, `error.response.data.code`, or be embedded in `error.message`.
+ */
+function getCircleErrorCode(err: unknown): number | null {
+  if (!err || typeof err !== "object") return null;
+
+  const e = err as Record<string, unknown>;
+
+  if (typeof e.code === "number") return e.code;
+  if (typeof e.code === "string") {
+    const parsed = Number.parseInt(e.code, 10);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+
+  const response = e.response as Record<string, unknown> | undefined;
+  const responseData = response?.data as Record<string, unknown> | undefined;
+  if (typeof responseData?.code === "number") return responseData.code;
+  if (typeof responseData?.code === "string") {
+    const parsed = Number.parseInt(responseData.code, 10);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+
+  // Last resort: scan the error message for "code: NNNNNN" or "(NNNNNN)"
+  const message = typeof e.message === "string" ? e.message : "";
+  const match = message.match(/\b(15\d{4})\b/);
+  if (match) {
+    return Number.parseInt(match[1], 10);
+  }
+
+  return null;
+}
+
+/**
+ * True when the error indicates the Circle user already exists for this userId.
+ */
+function isCircleUserAlreadyExistsError(err: unknown): boolean {
+  if (getCircleErrorCode(err) === 155101) return true;
+  const message = err instanceof Error ? err.message.toLowerCase() : "";
+  return (
+    message.includes("already exist") ||
+    message.includes("already created") ||
+    message.includes("existing user")
+  );
+}
+
+/**
+ * True when the error indicates the Circle user has already been initialized
+ * (PIN + wallets already created).
+ */
+function isCircleUserAlreadyInitializedError(err: unknown): boolean {
+  if (getCircleErrorCode(err) === 155106) return true;
+  const message = err instanceof Error ? err.message.toLowerCase() : "";
+  return message.includes("already initialized");
+}
+
+// ---------------------------------------------------------------------------
 // 1. Check Circle configuration status (safe to call from client)
 // ---------------------------------------------------------------------------
 
@@ -89,11 +150,13 @@ export async function createCircleUser(
     await client.createUser({ userId: merchantId });
     return { success: true, data: { userId: merchantId } };
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Failed to create Circle user.";
-    // Circle returns 409 if user already exists — treat as success
-    if (message.includes("already exist") || message.includes("409")) {
+    // Circle returns code 155101 / message "Existing user already created"
+    // when the userId is already mapped to a Circle user. That's fine — the
+    // user exists, which is exactly what we want for the next step.
+    if (isCircleUserAlreadyExistsError(err)) {
       return { success: true, data: { userId: merchantId } };
     }
+    const message = err instanceof Error ? err.message : "Failed to create Circle user.";
     return { success: false, error: message };
   }
 }
@@ -152,10 +215,19 @@ export async function acquireCircleSession(
  * Create a challenge to initialize the user's wallet.
  * The returned challengeId must be executed by the client-side Web SDK
  * (user sets PIN, security questions, wallet is created).
+ *
+ * Idempotent: if the user has already been initialized (Circle 155106) or
+ * a wallet already exists for this userId, returns `alreadyInitialized: true`
+ * with no challengeId so the caller can skip the SDK challenge step.
  */
 export async function initializeCircleWallet(
   merchantId: string
-): Promise<CircleActionResult<{ challengeId: string }>> {
+): Promise<
+  CircleActionResult<{
+    challengeId: string | null;
+    alreadyInitialized: boolean;
+  }>
+> {
   const client = getCircleClient();
   if (!client) {
     return {
@@ -174,6 +246,23 @@ export async function initializeCircleWallet(
       };
     }
 
+    // Pre-flight: if the user already has wallets, skip the challenge.
+    // listWallets is idempotent and never causes Circle to mutate state.
+    try {
+      const existingWallets = await client.listWallets({ userId: merchantId });
+      const wallets = existingWallets.data?.wallets ?? [];
+      if (wallets.length > 0) {
+        return {
+          success: true,
+          data: { challengeId: null, alreadyInitialized: true },
+        };
+      }
+    } catch {
+      // If the listWallets pre-flight fails for any reason, fall through
+      // and try the challenge path below — better to attempt creation
+      // than to surface a confusing error here.
+    }
+
     // Create the wallet initialization challenge
     // This creates a PIN-based wallet. Blockchain is configured in Circle Console.
     const response = await client.createUserPinWithWallets({
@@ -189,8 +278,20 @@ export async function initializeCircleWallet(
       };
     }
 
-    return { success: true, data: { challengeId } };
+    return {
+      success: true,
+      data: { challengeId, alreadyInitialized: false },
+    };
   } catch (err: unknown) {
+    // Circle returns 155106 ("user has already been initialized") when the
+    // user has previously completed PIN/wallet setup. That's not a fatal
+    // error — the caller should fall through to listWallets.
+    if (isCircleUserAlreadyInitializedError(err)) {
+      return {
+        success: true,
+        data: { challengeId: null, alreadyInitialized: true },
+      };
+    }
     const message = err instanceof Error ? err.message : "Failed to create wallet challenge.";
     return { success: false, error: message };
   }
@@ -240,8 +341,11 @@ export async function syncCircleWalletAddress(
       state: wallet.state ?? "",
     };
 
-    // If we have a valid address, store it in the merchant record
-    if (walletInfo.address && walletInfo.state === "LIVE") {
+    // If we have a valid address, store it in the merchant record.
+    // Older wallets surface as state === "LIVE", but freshly-restored
+    // wallets can briefly report "INITIALIZED" or no state at all even
+    // though they are usable — accept any wallet whose address exists.
+    if (walletInfo.address) {
       await prisma.merchant.update({
         where: { id: merchantId },
         data: { walletAddress: walletInfo.address },
