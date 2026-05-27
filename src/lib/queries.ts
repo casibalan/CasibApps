@@ -51,10 +51,12 @@ export async function getMerchantById(id: string) {
 }
 
 /**
- * Fetch all invoices for the dashboard, ordered by newest first.
+ * Fetch invoices for a specific merchant, ordered by newest first.
+ * Provides data isolation — each merchant only sees their own invoices.
  */
-export async function getInvoices(): Promise<Invoice[]> {
+export async function getInvoices(merchantId: string): Promise<Invoice[]> {
   const rows = await prisma.invoice.findMany({
+    where: { merchantId },
     orderBy: { createdAt: "desc" },
   });
   return rows.map(toInvoiceView);
@@ -62,13 +64,15 @@ export async function getInvoices(): Promise<Invoice[]> {
 
 /**
  * Fetch a single invoice by invoiceNumber, paymentLinkSlug, or cuid id.
- * Supports case-insensitive matching for invoiceNumber and paymentLinkSlug.
+ * Scoped to a specific merchant for data isolation.
  */
 export async function getInvoiceByIdOrNumber(
-  idOrNumber: string
+  idOrNumber: string,
+  merchantId: string
 ): Promise<Invoice | null> {
   const row = await prisma.invoice.findFirst({
     where: {
+      merchantId,
       OR: [
         { id: idOrNumber },
         { invoiceNumber: { equals: idOrNumber, mode: "insensitive" } },
@@ -106,14 +110,15 @@ export async function getInvoiceWithMerchant(idOrNumber: string) {
 }
 
 /**
- * Compute dashboard stats from real invoice data.
+ * Compute dashboard stats for a specific merchant.
+ * Provides data isolation — stats reflect only the merchant's own invoices.
  */
-export async function getDashboardStats(): Promise<DashboardStat[]> {
+export async function getDashboardStats(merchantId: string): Promise<DashboardStat[]> {
   const [paidCount, pendingCount, totalReceived] = await Promise.all([
-    prisma.invoice.count({ where: { status: "PAID" } }),
-    prisma.invoice.count({ where: { status: "PENDING" } }),
+    prisma.invoice.count({ where: { merchantId, status: "PAID" } }),
+    prisma.invoice.count({ where: { merchantId, status: "PENDING" } }),
     prisma.invoice.aggregate({
-      where: { status: "PAID" },
+      where: { merchantId, status: "PAID" },
       _sum: { amount: true },
     }),
   ]);

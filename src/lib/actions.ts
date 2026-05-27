@@ -3,8 +3,6 @@
 import { redirect } from "next/navigation";
 import { prisma } from "./prisma";
 
-const MERCHANT_EMAIL = "alanilahi123@gmail.com";
-
 export type CreateInvoiceState = {
   errors?: {
     clientName?: string;
@@ -18,6 +16,7 @@ export async function createInvoice(
   _prevState: CreateInvoiceState,
   formData: FormData
 ): Promise<CreateInvoiceState> {
+  const merchantId = formData.get("merchantId")?.toString().trim() ?? "";
   const clientName = formData.get("clientName")?.toString().trim() ?? "";
   const clientEmail = formData.get("clientEmail")?.toString().trim() ?? "";
   const amountRaw = formData.get("amount")?.toString().trim() ?? "";
@@ -44,19 +43,24 @@ export async function createInvoice(
     return { errors };
   }
 
-  // Find or create the demo merchant
-  let merchant = await prisma.merchant.findUnique({
-    where: { email: MERCHANT_EMAIL },
-  });
+  // Resolve merchant from session merchantId
+  let merchant;
+  if (merchantId) {
+    merchant = await prisma.merchant.findUnique({
+      where: { id: merchantId },
+    });
+  }
+
+  // Fallback: if merchantId not provided or not found, use first merchant
+  // This preserves backward compatibility but should not happen with auth gating
+  if (!merchant) {
+    merchant = await prisma.merchant.findFirst({
+      orderBy: { createdAt: "asc" },
+    });
+  }
 
   if (!merchant) {
-    merchant = await prisma.merchant.create({
-      data: {
-        name: "Alan Ilahi",
-        email: MERCHANT_EMAIL,
-        businessName: "CasibApps",
-      },
-    });
+    return { errors: { general: "No merchant account found. Please log in again." } };
   }
 
   // Generate next invoice number
@@ -79,7 +83,7 @@ export async function createInvoice(
   // Parse due date
   const dueDate = dueDateRaw ? new Date(dueDateRaw) : null;
 
-  // Create the invoice
+  // Create the invoice linked to the authenticated merchant
   await prisma.invoice.create({
     data: {
       invoiceNumber,

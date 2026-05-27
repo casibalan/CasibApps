@@ -7,10 +7,6 @@ export const dynamic = "force-dynamic";
 /**
  * /login — Circle Social Login with Google.
  *
- * Google OAuth Web Client ID is configured inside Circle Console.
- * The Circle Web SDK handles the full OAuth flow without needing
- * the Google Client ID in our app environment.
- *
  * If the user is already logged in (has a valid merchant session),
  * redirect to dashboard. Otherwise show the Google login flow.
  */
@@ -18,6 +14,10 @@ export default async function LoginPage() {
   // Check if already logged in
   const session = await getMerchantSession();
   if (session) {
+    // If wallet is missing, guide to wallet setup
+    if (!session.walletAddress) {
+      redirect("/wallet");
+    }
     redirect("/dashboard");
   }
 
