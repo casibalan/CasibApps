@@ -290,6 +290,25 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
           });
         }
 
+        // Sanitized hash/search diagnostics. We log a 60-char prefix at
+        // most so we never leak a full id_token/access_token. This runs
+        // whenever the URL has a hash so we can confirm what the SDK saw
+        // (or didn't see) on this load.
+        if (hasOAuthCallback || window.location.hash) {
+          const rawHash = window.location.hash;
+          const rawSearch = window.location.search;
+          console.log("[CircleLogin] callback hash diagnostics", {
+            hashLength: rawHash.length,
+            hashPrefix: rawHash.slice(0, 60),
+            hasStateText: rawHash.includes("state"),
+            hasIdTokenText: rawHash.includes("id_token"),
+            hasAccessTokenText: rawHash.includes("access_token"),
+            hasCodeText: rawHash.includes("code"),
+            searchLength: rawSearch.length,
+            searchPrefix: rawSearch.slice(0, 60),
+          });
+        }
+
         if (hasOAuthCallback && !cancelled) {
           setStep("logged-in");
           setStatusMsg("Completing Google login...");
@@ -337,6 +356,29 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
             provider: Boolean(restored.socialLoginProvider),
             state: Boolean(restored.state),
             nonce: Boolean(restored.nonce),
+          });
+
+          // Compare the OAuth state Google returned in the hash with the
+          // state the SDK stored in localStorage before the redirect.
+          // A mismatch here is a likely cause of onLoginComplete silently
+          // failing to fire. Values are fingerprinted (length + 6-char
+          // head + 6-char tail) so we can compare without leaking secrets.
+          const fingerprint = (value: string) =>
+            value
+              ? `${value.length}:${value.slice(0, 6)}:${value.slice(-6)}`
+              : "missing";
+
+          const returnedState = hashParams.get("state") ?? "";
+          const storedState = window.localStorage.getItem("state") ?? "";
+          const storedNonce = window.localStorage.getItem("nonce") ?? "";
+
+          console.log("[CircleLogin] oauth state comparison", {
+            returnedState: fingerprint(returnedState),
+            storedState: fingerprint(storedState),
+            stateMatches: returnedState === storedState,
+            storedNonce: fingerprint(storedNonce),
+            hasIdToken: Boolean(hashParams.get("id_token")),
+            hasAccessToken: Boolean(hashParams.get("access_token")),
           });
         }
 
