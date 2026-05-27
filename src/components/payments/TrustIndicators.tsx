@@ -6,13 +6,13 @@ export function TrustIndicators() {
       <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4">
         <Badge tone="cyan">Circle Developer Platform</Badge>
         <p className="mt-3 text-sm text-slate-300">
-          Demo checkout prepared for Circle Wallet payment flows.
+          Payments powered by USDC on Arc Testnet with Circle infrastructure.
         </p>
       </div>
       <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4">
         <Badge tone="emerald">Arc settlement</Badge>
         <p className="mt-3 text-sm text-slate-300">
-          Settlement tracking is shown as a frontend-only MVP state.
+          Transactions settle onchain via CasibInvoiceEscrow smart contract.
         </p>
       </div>
     </section>

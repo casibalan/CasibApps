@@ -72,6 +72,7 @@ export async function getInvoiceByIdOrNumber(
 /**
  * Fetch a single invoice with merchant info for the pay page.
  * Supports case-insensitive matching for invoiceNumber and paymentLinkSlug.
+ * Returns merchantWalletAddress so the payment flow can target the correct wallet.
  */
 export async function getInvoiceWithMerchant(idOrNumber: string) {
   const row = await prisma.invoice.findFirst({
@@ -88,6 +89,8 @@ export async function getInvoiceWithMerchant(idOrNumber: string) {
   return {
     invoice: toInvoiceView(row),
     merchantName: row.merchant.businessName ?? row.merchant.name,
+    merchantWalletAddress: row.merchant.walletAddress ?? null,
+    invoiceDbId: row.id,
   };
 }
 

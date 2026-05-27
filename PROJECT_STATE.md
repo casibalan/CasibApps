@@ -99,12 +99,19 @@ Current real flow:
 - Foundry smart contract deployed and verified on Arc Testnet.
 - Real USDC approve + payInvoice tested on Arc Testnet via terminal.
 
+Completed (this session):
+- Frontend /pay/[id] is now connected to the CasibInvoiceEscrow contract via viem.
+- Payment flow: approve USDC → payInvoice → wait for receipt → update DB (status=PAID, arcTxHash saved).
+- Merchant wallet address is read from database (invoice → merchant → walletAddress).
+- If merchant.walletAddress is null, payment page shows "Merchant wallet not configured" blocked state.
+- If invoice is already paid, payment page shows "Invoice paid" confirmation.
+- No fake/mock payment. Real contract interaction only.
+
 Not done yet:
-- Frontend is not connected to the contract yet.
-- Circle Wallet SDK is not connected.
-- Merchant wallet address is not wired into payment flow yet.
-- Invoice status is not auto-updated from onchain tx yet.
+- Circle Wallet SDK is not connected (planned as future wallet layer).
 - Vercel production env must be completed.
+- Server-side onchain verification (read isPaid from contract) not yet added — currently trusts client tx hash.
+- Multi-merchant auth/onboarding not yet implemented (plan below).
 
 ## Security
 
@@ -116,18 +123,49 @@ The Neon database URL was exposed in chat before. Rotate the Neon password befor
 
 1. Rotate Neon password and update DATABASE_URL locally and in Vercel.
 2. Add Vercel env vars: DATABASE_URL, ARC_RPC_URL, USDC_TOKEN_ADDRESS, CASIB_INVOICE_ESCROW_ADDRESS.
-3. Add merchant wallet address to the Merchant record.
-4. Install viem.
-5. Add contract ABI/config.
-6. Connect /pay/[id] to real contract flow:
-   - approve USDC
-   - call payInvoice(bytes32 invoiceId, address merchant, uint256 amount)
-   - capture tx hash
-   - update invoice status to PAID
-   - update settlementStatus to SETTLED
-   - save arcTxHash
-7. After viem flow works, integrate Circle Wallet SDK as the wallet layer.
+3. Set merchant walletAddress in the database for the seed merchant (via Prisma Studio or a migration script).
+4. Test the full /pay/[id] flow on Arc Testnet with MetaMask.
+5. Add server-side onchain verification: after confirmPayment, read isPaid(invoiceId) from the contract to verify before marking PAID.
+6. Integrate Circle Wallet SDK as the wallet/onboarding layer.
+
+## Multi-Merchant Onboarding Plan (Milestone 3)
+
+This section describes how the app will scale from one seeded merchant to many merchants.
+
+### Merchant Signup Flow
+
+1. New merchant signs up via an auth provider (e.g. NextAuth / Clerk / Circle embedded auth).
+2. On signup, a new `Merchant` record is created in the database with their email and business name.
+3. During onboarding, the merchant connects or creates a wallet:
+   - **Circle Wallet SDK** creates/manages the merchant's wallet.
+   - The resulting wallet address is stored in `Merchant.walletAddress`.
+4. Until `walletAddress` is set, the merchant cannot receive payments (enforced by the /pay/[id] blocked state).
+
+### Invoice Creation
+
+- Invoice creation (`createInvoice` action) uses the logged-in merchant's ID instead of the hardcoded `MERCHANT_EMAIL`.
+- Each invoice's `merchantId` links to the authenticated merchant.
+- The `createInvoice` action will receive `merchantId` from the session/auth context.
+
+### Payment Resolution
+
+- `/pay/[id]` resolves the merchant wallet from: `invoice → merchant → walletAddress`.
+- This is already implemented. No global wallet address is used.
+- Each merchant's invoices route payments to that merchant's wallet.
+
+### Where Circle Wallet SDK Fits
+
+- **Merchant onboarding**: Circle Embedded Wallets create/manage merchant wallets. The SDK handles key management so merchants don't need to manage private keys.
+- **Customer payment** (future): Circle Wallet SDK can also provide the payer wallet, replacing the current MetaMask/injected wallet requirement.
+- **Installation**: Circle SDK should be added only when the auth layer is ready and the team is prepared to integrate the full Circle Developer Platform flow.
+
+### Auth Architecture Decision Needed
+
+Before implementing multi-merchant:
+- Choose auth provider (NextAuth, Clerk, or Circle's own auth).
+- Decide if merchant wallet creation happens at signup or as a separate onboarding step.
+- Determine if Circle Programmable Wallets or Circle Embedded Wallets are the target product.
 
 ## Prompt For New Chat
 
-Lanjutkan CasibApps dari repo casibalan/CasibApps. Baca PROJECT_STATE.md dan AGENTS.md dulu. Jangan mulai ulang. Jangan brainstorming ulang. Jangan buat code di luar workflow. Kita sudah punya Next.js + Prisma + Neon invoice app, Foundry contract CasibInvoiceEscrow deployed and verified on Arc Testnet, dan real approve + payInvoice sudah sukses. Lanjutkan dari Next Exact Workflow di PROJECT_STATE.md. Tidak boleh mock/fake/demo paid flow.
+Lanjutkan CasibApps dari repo casibalan/CasibApps. Baca PROJECT_STATE.md dan AGENTS.md dulu. Jangan mulai ulang. Jangan brainstorming ulang. Jangan buat code di luar workflow. Kita sudah punya Next.js + Prisma + Neon invoice app, Foundry contract CasibInvoiceEscrow deployed and verified on Arc Testnet, dan real approve + payInvoice sudah sukses. Frontend /pay/[id] sekarang sudah connected ke contract via viem. Lanjutkan dari Next Exact Workflow di PROJECT_STATE.md. Tidak boleh mock/fake/demo paid flow.
