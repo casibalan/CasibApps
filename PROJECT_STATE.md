@@ -2,279 +2,132 @@
 
 Last updated: 2026-05-27
 
-## Project Identity
+## Current Rule
+
+Do not restart planning. Do not create unrelated code. Do not provide detached code snippets as the main workflow. Work from the existing repository state and continue the next step only.
+
+No mock payment flow. No fake paid button. No dummy onchain status. The project must continue toward real Arc Testnet + Circle Wallet payment flow.
+
+## Project
 
 CasibApps is an AI-powered USDC invoicing and checkout app for small businesses and freelancers.
 
-Grant positioning:
-- Arc-native payment and settlement app
+Grant direction:
+- Arc-native payment and settlement
 - Circle Developer Platform aligned
 - USDC checkout
-- Merchant invoicing
-- Agentic commerce
-- Real smart contract payment flow on Arc Testnet
+- merchant invoicing
+- agentic commerce
+- real smart contract payment on Arc Testnet
 
-Do not position this project as:
-- generic wallet
-- exchange
-- DeFi trading app
-- prediction market
-- gambling app
-- fake/demo-only payment app
+Do not position as a generic wallet, exchange, trading app, prediction market, gambling app, or demo-only payment app.
 
-## Repository
+## Repo
 
-GitHub:
-https://github.com/casibalan/CasibApps
+GitHub: casibalan/CasibApps
+Branch: main
 
-Main branch is active.
+## Stack
 
-## Current Tech Stack
-
-Frontend:
 - Next.js App Router
 - TypeScript
 - Tailwind CSS
-- Mobile-first smartphone Web3 fintech UI
-- viem for Arc Testnet contract calls
+- Prisma 7
+- Neon PostgreSQL
+- Foundry
+- Solidity
+- Arc Testnet
+- viem for contract calls
+
+## Completed
+
+App:
+- Landing page done.
+- Mobile-first app shell done.
+- Routes exist: /, /dashboard, /invoices/new, /invoices/[id], /pay/[id].
 
 Database:
-- Neon PostgreSQL
-- Prisma 7.x
-- Prisma adapter-pg
-- Seed data exists
+- Prisma + Neon configured.
+- Merchant and Invoice models exist.
+- Seed data exists.
+- /dashboard reads from database.
+- /invoices/[id] reads from database.
+- /pay/[id] reads from database.
+- /invoices/new creates real invoices in Neon.
+- Created invoice INV-1011 was tested.
+
+Vercel:
+- project exists: casibapps.
+- database pages were marked dynamic: /dashboard, /invoices/[id], /pay/[id].
+- prior deploy failed because DATABASE_URL was missing; set env vars and redeploy latest main.
 
 Smart contract:
-- Foundry
-- Solidity ^0.8.24
-- Arc Testnet
+- Foundry contract CasibInvoiceEscrow exists.
+- Contract is deployed to Arc Testnet.
+- Contract is verified on Arcscan / Blockscout.
+- Real terminal approve + payInvoice succeeded on Arc Testnet.
 
-Deployment:
-- Vercel project: casibapps
-- Vercel team: Alan Ilahi's projects
-- DATABASE_URL must be configured in Vercel env
+Contract details:
+- CasibInvoiceEscrow: 0x1c5e3AafC5D2Ce9C9BC0e5A5a7Bc665ed7Fd1CCC
+- Arc Testnet chain id: 5042002
+- Arc Testnet RPC: https://rpc.testnet.arc.network
+- Arc Testnet USDC: 0x3600000000000000000000000000000000000000
+- Verified URL: https://testnet.arcscan.app/address/0x1c5e3aafc5d2ce9c9bc0e5a5a7bc665ed7fd1ccc
 
-## Important Local Rules
+Onchain proof:
+- Deploy tx: 0x20165024d770aa15618fe54b82e336145a28dc39ba8f8faf9679cb3f8e0f66ba
+- Approve tx: 0x1790c3923deda3573909f6fe087c7566d33ba8d0f682ad5c8799e73fcd8998ac
+- payInvoice tx: 0xccc192cbed55b828c21de64bec0d6630b1af1e88a7446680e4fd7a7406532a80
 
-Use local repo-specific Git config only. Do not set global Git identity for this project.
-
-Local Git identity:
-- user.name: casibalan
-- user.email: alanilahi123@gmail.com
-
-Secrets stay in .env only.
-Never commit .env.
-Never paste private keys or database URLs into chat.
-
-Important: Neon DATABASE_URL was accidentally exposed in chat logs earlier. Rotate Neon database password and update local .env + Vercel DATABASE_URL.
-
-## Completed Work
-
-### App Foundation
-
-Done:
-- Next.js app initialized
-- Landing page created
-- Landing page refactored into modular components
-- Mobile-first MVP app shell created
-
-Routes:
-- /
-- /dashboard
-- /invoices/new
-- /invoices/[id]
-- /pay/[id]
-
-### Database
-
-Done:
-- Prisma installed
-- Neon PostgreSQL connected
-- Prisma schema created
-- Migration exists
-- Prisma Studio confirmed tables:
-  - Merchant
-  - Invoice
-  - _prisma_migrations
-- Seed script added
-- Seed data inserted
-- Merchant model already has walletAddress
-- Invoice model already has status, settlementStatus, arcTxHash, paidAt
-
-Seeded merchant:
-- name: Casib Owner
-- email: alanilahi123@gmail.com
-- businessName: Casib Studio
-
-Seeded invoices:
-- INV-1008
-- INV-1009
-- INV-1010
-
-### App Database Flow
-
-Done:
-- /dashboard reads from database
-- /invoices/[id] reads from database
-- /pay/[id] reads from database
-- invoice lookup supports invoiceNumber, lowercase slug, and paymentLinkSlug
-- /invoices/new creates real invoices in Neon
-- create invoice flow tested successfully
-- Example created invoice:
-  - INV-1011
-  - /invoices/INV-1011 works
-  - /pay/pay-inv-1011 works
-
-### Vercel
-
-Done:
-- Vercel project exists: casibapps
-- Database pages were changed to dynamic rendering:
-  - /dashboard
-  - /invoices/[id]
-  - /pay/[id]
-
-Important:
-- Vercel deploy previously failed because DATABASE_URL was missing and Prisma tried 127.0.0.1:5432.
-- Fix required:
-  - Set DATABASE_URL in Vercel Environment Variables
-  - Redeploy latest commit
-
-### Smart Contract
-
-Done:
-- Foundry installed
-- Foundry contract foundation added
-- Contract deployed to Arc Testnet
-- Contract verified on Arcscan / Blockscout
-- Real onchain function test passed
-
-Contract:
-CasibInvoiceEscrow
-
-Contract address:
-0x1c5e3AafC5D2Ce9C9BC0e5A5a7Bc665ed7Fd1CCC
-
-Network:
-Arc Testnet
-
-Chain ID:
-5042002
-
-RPC:
-https://rpc.testnet.arc.network
-
-USDC token address:
-0x3600000000000000000000000000000000000000
-
-Deploy tx:
-0x20165024d770aa15618fe54b82e336145a28dc39ba8f8faf9679cb3f8e0f66ba
-
-Approve tx:
-0x1790c3923deda3573909f6fe087c7566d33ba8d0f682ad5c8799e73fcd8998ac
-
-payInvoice tx:
-0xccc192cbed55b828c21de64bec0d6630b1af1e88a7446680e4fd7a7406532a80
-
-Verified contract URL:
-https://testnet.arcscan.app/address/0x1c5e3aafc5d2ce9c9bc0e5a5a7bc665ed7fd1ccc
-
-Onchain terminal tests completed:
-- isPaid(dummy) returned false
-- usdc() returned 0x3600000000000000000000000000000000000000
-- USDC approve succeeded
-- payInvoice succeeded
-- InvoicePaid event emitted
-- isPaid(invoiceId) returned true
-
-### Frontend Contract Wiring
-
-Done in latest main commits:
-- viem dependency added
-- Arc Testnet chain/config added in src/lib/arc-contract.ts
-- CasibInvoiceEscrow ABI added
-- ERC20 approve ABI added
-- client-safe invoice hash and USDC amount helpers added in src/lib/payment-utils.ts
-- server-side onchain verification added in src/lib/payments.ts
-- confirmInvoicePayment server action added
-- /pay/[id] now uses PayInvoiceButton instead of mock button
-- payment button requests browser wallet account
-- payment button switches to Arc Testnet chain ID 5042002 when needed
-- payment button approves USDC to CasibInvoiceEscrow
-- payment button calls payInvoice(bytes32 invoiceId, address merchant, uint256 amount)
-- payment button captures tx hash and links to Arcscan
-- server action verifies transaction receipt, contract isPaid(invoiceId), and matching InvoicePaid event
-- verified payment updates invoice status to PAID
-- verified payment updates settlementStatus to SETTLED
-- verified payment saves arcTxHash and paidAt
-- PaymentStatusCard now shows real invoice status, not demo status
+Terminal tests completed:
+- isPaid(dummy) returned false.
+- usdc() returned the Arc Testnet USDC token address.
+- USDC approve succeeded.
+- payInvoice succeeded.
+- InvoicePaid event emitted.
+- isPaid(invoiceId) returned true.
 
 ## Current Status
 
-The project is no longer just a mock UI.
+The project is no longer only a UI prototype.
 
 Current real flow:
-- Create invoice from web form
-- Save invoice to Neon PostgreSQL
-- View invoice detail
-- Open payment page
-- Foundry smart contract deployed and verified on Arc Testnet
-- Real USDC approve + payInvoice tested on Arc Testnet via terminal
-- Frontend payment page is now wired to real Arc Testnet contract calls through viem
-- Database status update is gated behind server-side onchain verification
-
-Still required before full browser E2E:
-- Rotate Neon database password if not already done
-- Update local .env with new DATABASE_URL
-- Update Vercel DATABASE_URL env
-- Add Vercel env vars:
-  - DATABASE_URL
-  - ARC_RPC_URL
-  - NEXT_PUBLIC_ARC_RPC_URL
-  - USDC_TOKEN_ADDRESS
-  - NEXT_PUBLIC_USDC_TOKEN_ADDRESS
-  - CASIB_INVOICE_ESCROW_ADDRESS
-  - NEXT_PUBLIC_CASIB_INVOICE_ESCROW_ADDRESS
-- Redeploy Vercel latest main commit
-- Set Merchant.walletAddress in Neon for the merchant that owns invoices
-- Run npm install so package-lock includes viem
-- Run npm run build locally after npm install
-- Test browser payment with an EIP-1193 wallet funded with Arc Testnet USDC
+- Create invoice from web form.
+- Save invoice to Neon PostgreSQL.
+- View invoice detail.
+- Open payment page.
+- Foundry smart contract deployed and verified on Arc Testnet.
+- Real USDC approve + payInvoice tested on Arc Testnet via terminal.
 
 Not done yet:
-- Circle Wallet SDK is not connected yet
-- Browser E2E payment has not been confirmed after this patch
-- Merchant wallet address must be populated in database before /pay/[id] can pay
+- Frontend is not connected to the contract yet.
+- Circle Wallet SDK is not connected.
+- Merchant wallet address is not wired into payment flow yet.
+- Invoice status is not auto-updated from onchain tx yet.
+- Vercel production env must be completed.
 
-## Next Recommended Steps
+## Security
 
-1. Rotate Neon database password.
-2. Update local .env with new DATABASE_URL.
-3. Update Vercel DATABASE_URL env.
-4. Add these env vars locally and in Vercel:
-   - DATABASE_URL
-   - ARC_RPC_URL
-   - NEXT_PUBLIC_ARC_RPC_URL
-   - USDC_TOKEN_ADDRESS
-   - NEXT_PUBLIC_USDC_TOKEN_ADDRESS
-   - CASIB_INVOICE_ESCROW_ADDRESS
-   - NEXT_PUBLIC_CASIB_INVOICE_ESCROW_ADDRESS
-5. Run npm install to install viem and generate/update package-lock.
-6. Set Merchant.walletAddress in Neon for alanilahi123@gmail.com.
-7. Run npm run build.
-8. Redeploy Vercel latest main commit.
-9. Test /pay/[id] browser flow:
-   - connect wallet
+Never commit secrets. Never paste private keys. Never commit .env.
+
+The Neon database URL was exposed in chat before. Rotate the Neon password before continuing serious deployment, then update local env and Vercel env.
+
+## Next Exact Workflow
+
+1. Rotate Neon password and update DATABASE_URL locally and in Vercel.
+2. Add Vercel env vars: DATABASE_URL, ARC_RPC_URL, USDC_TOKEN_ADDRESS, CASIB_INVOICE_ESCROW_ADDRESS.
+3. Add merchant wallet address to the Merchant record.
+4. Install viem.
+5. Add contract ABI/config.
+6. Connect /pay/[id] to real contract flow:
    - approve USDC
    - call payInvoice(bytes32 invoiceId, address merchant, uint256 amount)
-   - confirm tx hash appears
-   - confirm invoice status changes to PAID
-   - confirm settlementStatus changes to SETTLED
-   - confirm arcTxHash is saved
-10. After viem contract flow works in browser, integrate Circle Wallet SDK as the wallet layer.
+   - capture tx hash
+   - update invoice status to PAID
+   - update settlementStatus to SETTLED
+   - save arcTxHash
+7. After viem flow works, integrate Circle Wallet SDK as the wallet layer.
 
-## Important Next Prompt For New Chat
+## Prompt For New Chat
 
-Use this prompt in a new ChatGPT tab:
-
-"Continue the CasibApps project from the repo casibalan/CasibApps. First read PROJECT_STATE.md and AGENTS.md. Do not restart planning. Current state: Next.js + Prisma + Neon invoice app works, Foundry contract CasibInvoiceEscrow is deployed and verified on Arc Testnet at 0x1c5e3AafC5D2Ce9C9BC0e5A5a7Bc665ed7Fd1CCC, real approve + payInvoice succeeded on Arc Testnet via terminal, and /pay/[id] has now been wired to viem for browser wallet approve + payInvoice with server-side receipt/event verification before updating invoice status. Next task: install viem locally/update lockfile, set Merchant.walletAddress, configure env vars, run build, redeploy Vercel, and test browser E2E. No fake payment flow, no mock, no placeholder paid button."
+Lanjutkan CasibApps dari repo casibalan/CasibApps. Baca PROJECT_STATE.md dan AGENTS.md dulu. Jangan mulai ulang. Jangan brainstorming ulang. Jangan buat code di luar workflow. Kita sudah punya Next.js + Prisma + Neon invoice app, Foundry contract CasibInvoiceEscrow deployed and verified on Arc Testnet, dan real approve + payInvoice sudah sukses. Lanjutkan dari Next Exact Workflow di PROJECT_STATE.md. Tidak boleh mock/fake/demo paid flow.
