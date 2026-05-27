@@ -36,6 +36,7 @@ Frontend:
 - TypeScript
 - Tailwind CSS
 - Mobile-first smartphone Web3 fintech UI
+- viem for Arc Testnet contract calls
 
 Database:
 - Neon PostgreSQL
@@ -97,6 +98,8 @@ Done:
   - _prisma_migrations
 - Seed script added
 - Seed data inserted
+- Merchant model already has walletAddress
+- Invoice model already has status, settlementStatus, arcTxHash, paidAt
 
 Seeded merchant:
 - name: Casib Owner
@@ -184,6 +187,28 @@ Onchain terminal tests completed:
 - InvoicePaid event emitted
 - isPaid(invoiceId) returned true
 
+### Frontend Contract Wiring
+
+Done in latest main commits:
+- viem dependency added
+- Arc Testnet chain/config added in src/lib/arc-contract.ts
+- CasibInvoiceEscrow ABI added
+- ERC20 approve ABI added
+- client-safe invoice hash and USDC amount helpers added in src/lib/payment-utils.ts
+- server-side onchain verification added in src/lib/payments.ts
+- confirmInvoicePayment server action added
+- /pay/[id] now uses PayInvoiceButton instead of mock button
+- payment button requests browser wallet account
+- payment button switches to Arc Testnet chain ID 5042002 when needed
+- payment button approves USDC to CasibInvoiceEscrow
+- payment button calls payInvoice(bytes32 invoiceId, address merchant, uint256 amount)
+- payment button captures tx hash and links to Arcscan
+- server action verifies transaction receipt, contract isPaid(invoiceId), and matching InvoicePaid event
+- verified payment updates invoice status to PAID
+- verified payment updates settlementStatus to SETTLED
+- verified payment saves arcTxHash and paidAt
+- PaymentStatusCard now shows real invoice status, not demo status
+
 ## Current Status
 
 The project is no longer just a mock UI.
@@ -195,40 +220,61 @@ Current real flow:
 - Open payment page
 - Foundry smart contract deployed and verified on Arc Testnet
 - Real USDC approve + payInvoice tested on Arc Testnet via terminal
+- Frontend payment page is now wired to real Arc Testnet contract calls through viem
+- Database status update is gated behind server-side onchain verification
+
+Still required before full browser E2E:
+- Rotate Neon database password if not already done
+- Update local .env with new DATABASE_URL
+- Update Vercel DATABASE_URL env
+- Add Vercel env vars:
+  - DATABASE_URL
+  - ARC_RPC_URL
+  - NEXT_PUBLIC_ARC_RPC_URL
+  - USDC_TOKEN_ADDRESS
+  - NEXT_PUBLIC_USDC_TOKEN_ADDRESS
+  - CASIB_INVOICE_ESCROW_ADDRESS
+  - NEXT_PUBLIC_CASIB_INVOICE_ESCROW_ADDRESS
+- Redeploy Vercel latest main commit
+- Set Merchant.walletAddress in Neon for the merchant that owns invoices
+- Run npm install so package-lock includes viem
+- Run npm run build locally after npm install
+- Test browser payment with an EIP-1193 wallet funded with Arc Testnet USDC
 
 Not done yet:
-- Frontend is not connected to the contract yet
 - Circle Wallet SDK is not connected yet
-- Merchant wallet address is not wired into the payment flow yet
-- Invoice status is not auto-updated from onchain tx yet
-- Vercel production deploy still needs correct env and redeploy
+- Browser E2E payment has not been confirmed after this patch
+- Merchant wallet address must be populated in database before /pay/[id] can pay
 
 ## Next Recommended Steps
 
 1. Rotate Neon database password.
 2. Update local .env with new DATABASE_URL.
 3. Update Vercel DATABASE_URL env.
-4. Add these Vercel env vars:
+4. Add these env vars locally and in Vercel:
    - DATABASE_URL
    - ARC_RPC_URL
+   - NEXT_PUBLIC_ARC_RPC_URL
    - USDC_TOKEN_ADDRESS
+   - NEXT_PUBLIC_USDC_TOKEN_ADDRESS
    - CASIB_INVOICE_ESCROW_ADDRESS
-5. Redeploy Vercel latest main commit.
-6. Add merchant wallet address to database.
-7. Install viem.
-8. Add contract ABI/config.
-9. Connect /pay/[id] page to real contract:
+   - NEXT_PUBLIC_CASIB_INVOICE_ESCROW_ADDRESS
+5. Run npm install to install viem and generate/update package-lock.
+6. Set Merchant.walletAddress in Neon for alanilahi123@gmail.com.
+7. Run npm run build.
+8. Redeploy Vercel latest main commit.
+9. Test /pay/[id] browser flow:
+   - connect wallet
    - approve USDC
    - call payInvoice(bytes32 invoiceId, address merchant, uint256 amount)
-   - capture tx hash
-   - update invoice status to PAID
-   - update settlementStatus to SETTLED
-   - save arcTxHash
-10. After viem contract flow works, integrate Circle Wallet SDK as the wallet layer.
+   - confirm tx hash appears
+   - confirm invoice status changes to PAID
+   - confirm settlementStatus changes to SETTLED
+   - confirm arcTxHash is saved
+10. After viem contract flow works in browser, integrate Circle Wallet SDK as the wallet layer.
 
 ## Important Next Prompt For New Chat
 
 Use this prompt in a new ChatGPT tab:
 
-"Continue the CasibApps project from the repo casibalan/CasibApps. First read PROJECT_STATE.md and AGENTS.md. Do not restart planning. Current state: Next.js + Prisma + Neon invoice app works, Foundry contract CasibInvoiceEscrow is deployed and verified on Arc Testnet at 0x1c5e3AafC5D2Ce9C9BC0e5A5a7Bc665ed7Fd1CCC, and real approve + payInvoice succeeded on Arc Testnet. Next task: rotate/update env if needed, then connect the /pay/[id] page to the real contract using viem, no fake payment flow, no mock, no placeholder paid button."
-
+"Continue the CasibApps project from the repo casibalan/CasibApps. First read PROJECT_STATE.md and AGENTS.md. Do not restart planning. Current state: Next.js + Prisma + Neon invoice app works, Foundry contract CasibInvoiceEscrow is deployed and verified on Arc Testnet at 0x1c5e3AafC5D2Ce9C9BC0e5A5a7Bc665ed7Fd1CCC, real approve + payInvoice succeeded on Arc Testnet via terminal, and /pay/[id] has now been wired to viem for browser wallet approve + payInvoice with server-side receipt/event verification before updating invoice status. Next task: install viem locally/update lockfile, set Merchant.walletAddress, configure env vars, run build, redeploy Vercel, and test browser E2E. No fake payment flow, no mock, no placeholder paid button."
