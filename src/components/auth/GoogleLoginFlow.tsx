@@ -411,6 +411,18 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
             (getCookie("circle_deviceEncryptionKey") as string) || "";
         }
 
+        // Sanitized diagnostics: did the per-device login config survive
+        // the Google round-trip? Booleans only, never the values.
+        console.log("[CircleLogin] restored device config", {
+          hasStoredLoginConfig: Boolean(storedConfig),
+          hasDeviceToken: Boolean(restoredDeviceToken),
+          hasDeviceEncryptionKey: Boolean(restoredDeviceEncryptionKey),
+          hasDeviceTokenCookie: Boolean(getCookie("circle_deviceToken")),
+          hasDeviceEncryptionKeyCookie: Boolean(
+            getCookie("circle_deviceEncryptionKey")
+          ),
+        });
+
         if (restoredDeviceToken) setDeviceToken(restoredDeviceToken);
         if (restoredDeviceEncryptionKey)
           setDeviceEncryptionKey(restoredDeviceEncryptionKey);
