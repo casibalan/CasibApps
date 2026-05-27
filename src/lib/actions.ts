@@ -1,7 +1,14 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "./prisma";
+import {
+  isAddressLike,
+  isTxHashLike,
+  markInvoicePaid,
+  verifyInvoicePaidOnchain,
+} from "./payments";
 
 const MERCHANT_EMAIL = "alanilahi123@gmail.com";
 
@@ -12,6 +19,11 @@ export type CreateInvoiceState = {
     description?: string;
     general?: string;
   };
+};
+
+export type ConfirmInvoicePaymentResult = {
+  ok: boolean;
+  error?: string;
 };
 
 export async function createInvoice(
@@ -97,4 +109,56 @@ export async function createInvoice(
   });
 
   redirect(`/invoices/${invoiceNumber}`);
+}
+
+export async function confirmInvoicePayment(params: {
+  invoiceNumber: string;
+  txHash: string;
+}): Promise<ConfirmInvoicePaymentResult> {
+  if (!params.invoiceNumber.trim()) {
+    return { ok: false, error: "Missing invoice number." };
+  }
+
+  if (!isTxHashLike(params.txHash)) {
+    return { ok: false, error: "Invalid Arc transaction hash." };
+  }
+
+  const invoice = await prisma.invoice.findUnique({
+    where: { invoiceNumber: params.invoiceNumber },
+    include: { merchant: true },
+  });
+
+  if (!invoice) {
+    return { ok: false, error: "Invoice not found." };
+  }
+
+  if (invoice.status === "PAID") {
+    return { ok: true };
+  }
+
+  if (!isAddressLike(invoice.merchant.walletAddress)) {
+    return { ok: false, error: "Merchant wallet address is not configured." };
+  }
+
+  const verification = await verifyInvoicePaidOnchain({
+    invoiceNumber: invoice.invoiceNumber,
+    merchantWalletAddress: invoice.merchant.walletAddress,
+    amount: Number(invoice.amount),
+    txHash: params.txHash,
+  });
+
+  if (!verification.ok) {
+    return { ok: false, error: verification.reason ?? "Unable to verify Arc payment." };
+  }
+
+  await markInvoicePaid({
+    invoiceNumber: invoice.invoiceNumber,
+    txHash: params.txHash,
+  });
+
+  revalidatePath("/dashboard");
+  revalidatePath(`/invoices/${invoice.invoiceNumber}`);
+  revalidatePath(`/pay/${invoice.paymentLinkSlug}`);
+
+  return { ok: true };
 }
