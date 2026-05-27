@@ -247,11 +247,34 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
       try {
         const { W3SSdk } = await import("@circle-fin/w3s-pw-web-sdk");
 
-        // Restore config from cookies (survives OAuth redirect)
-        const restoredDeviceToken =
-          (getCookie("circle_deviceToken") as string) || "";
-        const restoredDeviceEncryptionKey =
-          (getCookie("circle_deviceEncryptionKey") as string) || "";
+        // Restore login config: prefer localStorage, fall back to cookies.
+        // localStorage is more reliable across OAuth redirects on mobile.
+        let restoredDeviceToken = "";
+        let restoredDeviceEncryptionKey = "";
+
+        const storedConfig = window.localStorage.getItem(
+          "casib.circle.login-config"
+        );
+        if (storedConfig) {
+          try {
+            const parsed = JSON.parse(storedConfig);
+            restoredDeviceToken = parsed.deviceToken || "";
+            restoredDeviceEncryptionKey =
+              parsed.deviceEncryptionKey || "";
+          } catch {
+            // Ignore parse errors
+          }
+        }
+
+        // Fall back to cookies if localStorage didn't have it
+        if (!restoredDeviceToken) {
+          restoredDeviceToken =
+            (getCookie("circle_deviceToken") as string) || "";
+        }
+        if (!restoredDeviceEncryptionKey) {
+          restoredDeviceEncryptionKey =
+            (getCookie("circle_deviceEncryptionKey") as string) || "";
+        }
 
         if (restoredDeviceToken) setDeviceToken(restoredDeviceToken);
         if (restoredDeviceEncryptionKey)
@@ -275,25 +298,34 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
             setStep("logged-in");
             setStatusMsg("Google login successful. Setting up account...");
 
+            // Clean up stored login config after successful login
+            window.localStorage.removeItem("casib.circle.login-config");
+
             // Auto-proceed with post-login flow
             void handlePostLogin(loginData);
           }
         };
 
-        const sdk = new W3SSdk(
-          {
-            appSettings: { appId },
-            loginConfigs: {
-              google: {
-                clientId: googleClientId,
-                redirectUri: window.location.origin,
-              },
-              deviceToken: restoredDeviceToken,
-              deviceEncryptionKey: restoredDeviceEncryptionKey,
-            },
-          },
-          onLoginComplete
-        );
+        // Only pass loginConfigs if we have valid device credentials.
+        // Passing empty deviceToken causes Circle verification to fail.
+        const initialConfig = {
+          appSettings: { appId },
+          ...(restoredDeviceToken && restoredDeviceEncryptionKey
+            ? {
+                loginConfigs: {
+                  google: {
+                    clientId: googleClientId,
+                    redirectUri: window.location.origin,
+                    selectAccountPrompt: true,
+                  },
+                  deviceToken: restoredDeviceToken,
+                  deviceEncryptionKey: restoredDeviceEncryptionKey,
+                },
+              }
+            : {}),
+        };
+
+        const sdk = new W3SSdk(initialConfig, onLoginComplete);
 
         sdkRef.current = sdk;
 
@@ -341,17 +373,27 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
       setDeviceToken(dt);
       setDeviceEncryptionKey(dek);
 
-      // Persist in cookies for after redirect
-      setCookie("circle_deviceToken", dt);
-      setCookie("circle_deviceEncryptionKey", dek);
+      // Persist in cookies AND localStorage for after redirect.
+      // localStorage is the primary restore source; cookies are fallback.
+      setCookie("circle_deviceToken", dt, { path: "/", sameSite: "lax" });
+      setCookie("circle_deviceEncryptionKey", dek, {
+        path: "/",
+        sameSite: "lax",
+      });
+      window.localStorage.setItem(
+        "casib.circle.login-config",
+        JSON.stringify({ deviceToken: dt, deviceEncryptionKey: dek })
+      );
 
-      // Update SDK config
+      // Update SDK config with selectAccountPrompt: true so the SDK
+      // generates the OAuth URL with prompt=select_account (not prompt=none).
       sdk.updateConfigs({
         appSettings: { appId },
         loginConfigs: {
           google: {
             clientId: googleClientId,
             redirectUri: window.location.origin,
+            selectAccountPrompt: true,
           },
           deviceToken: dt,
           deviceEncryptionKey: dek,
