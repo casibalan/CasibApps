@@ -450,25 +450,31 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
             if (!/circle|wallet/i.test(origin)) return;
 
             const data = event.data;
+            const dataType = typeof data;
             const dataKeys =
               data && typeof data === "object"
                 ? Object.keys(data as Record<string, unknown>)
                 : [];
+            const firstKey = dataKeys[0];
 
-            const eventName =
-              data && typeof data === "object"
-                ? (data as Record<string, unknown>).eventName
-                : undefined;
-            const type =
-              data && typeof data === "object"
-                ? (data as Record<string, unknown>).type
-                : undefined;
+            // If the first top-level key is itself an object, peek at
+            // ITS keys too — the SDK contract dispatches on flags like
+            // event.data.onSocialLoginVerified, whose value is
+            // { error, result }. We log only key names, never values.
+            let nestedKeys: string[] | undefined;
+            if (firstKey && data && typeof data === "object") {
+              const inner = (data as Record<string, unknown>)[firstKey];
+              if (inner && typeof inner === "object") {
+                nestedKeys = Object.keys(inner as Record<string, unknown>);
+              }
+            }
 
-            console.log("[CircleLogin] sdk message", {
+            console.log("[CircleLogin] sdk message detail", {
               origin,
+              dataType,
               dataKeys,
-              eventName,
-              type,
+              firstKey,
+              nestedKeys,
             });
           } catch {
             // never let diagnostics break the SDK
