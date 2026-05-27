@@ -53,14 +53,13 @@ type FlowStep =
 
 type GoogleLoginFlowProps = {
   appId: string;
-  googleClientId: string;
 };
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps) {
+export function GoogleLoginFlow({ appId }: GoogleLoginFlowProps) {
   const sdkRef = useRef<W3SSdk | null>(null);
 
   const [step, setStep] = useState<FlowStep>("loading");
@@ -284,10 +283,6 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
           {
             appSettings: { appId },
             loginConfigs: {
-              google: {
-                clientId: googleClientId,
-                redirectUri: window.location.origin + "/login",
-              },
               deviceToken: restoredDeviceToken,
               deviceEncryptionKey: restoredDeviceEncryptionKey,
             },
@@ -317,7 +312,7 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
     return () => {
       cancelled = true;
     };
-  }, [appId, googleClientId, handlePostLogin]);
+  }, [appId, handlePostLogin]);
 
   // -------------------------------------------------------------------------
   // "Continue with Google" click handler
@@ -347,10 +342,6 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
       sdk.updateConfigs({
         appSettings: { appId },
         loginConfigs: {
-          google: {
-            clientId: googleClientId,
-            redirectUri: window.location.origin + "/login",
-          },
           deviceToken: dt,
           deviceEncryptionKey: dek,
         },
@@ -370,7 +361,7 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
       setErrorMsg(message);
       setStep("error");
     }
-  }, [deviceId, appId, googleClientId, callApi]);
+  }, [deviceId, appId, callApi]);
 
   // -------------------------------------------------------------------------
   // Render

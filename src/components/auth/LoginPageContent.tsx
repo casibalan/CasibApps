@@ -9,13 +9,11 @@ import { GoogleLoginFlow } from "./GoogleLoginFlow";
 
 type LoginPageContentProps = {
   appId: string;
-  googleClientId: string;
   missingVars: string[];
 };
 
 export function LoginPageContent({
   appId,
-  googleClientId,
   missingVars,
 }: LoginPageContentProps) {
   const hasConfig = missingVars.length === 0;
@@ -47,7 +45,7 @@ export function LoginPageContent({
           </p>
 
           {hasConfig ? (
-            <GoogleLoginFlow appId={appId} googleClientId={googleClientId} />
+            <GoogleLoginFlow appId={appId} />
           ) : (
             <div className="rounded-xl border border-amber-300/20 bg-amber-300/[0.06] p-4">
               <p className="text-xs font-medium text-amber-200">
