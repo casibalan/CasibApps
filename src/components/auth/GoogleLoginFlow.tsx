@@ -53,13 +53,14 @@ type FlowStep =
 
 type GoogleLoginFlowProps = {
   appId: string;
+  googleClientId: string;
 };
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function GoogleLoginFlow({ appId }: GoogleLoginFlowProps) {
+export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps) {
   const sdkRef = useRef<W3SSdk | null>(null);
 
   const [step, setStep] = useState<FlowStep>("loading");
@@ -283,6 +284,10 @@ export function GoogleLoginFlow({ appId }: GoogleLoginFlowProps) {
           {
             appSettings: { appId },
             loginConfigs: {
+              google: {
+                clientId: googleClientId,
+                redirectUri: window.location.origin,
+              },
               deviceToken: restoredDeviceToken,
               deviceEncryptionKey: restoredDeviceEncryptionKey,
             },
@@ -312,7 +317,7 @@ export function GoogleLoginFlow({ appId }: GoogleLoginFlowProps) {
     return () => {
       cancelled = true;
     };
-  }, [appId, handlePostLogin]);
+  }, [appId, googleClientId, handlePostLogin]);
 
   // -------------------------------------------------------------------------
   // "Continue with Google" click handler
@@ -342,6 +347,10 @@ export function GoogleLoginFlow({ appId }: GoogleLoginFlowProps) {
       sdk.updateConfigs({
         appSettings: { appId },
         loginConfigs: {
+          google: {
+            clientId: googleClientId,
+            redirectUri: window.location.origin,
+          },
           deviceToken: dt,
           deviceEncryptionKey: dek,
         },
@@ -361,7 +370,7 @@ export function GoogleLoginFlow({ appId }: GoogleLoginFlowProps) {
       setErrorMsg(message);
       setStep("error");
     }
-  }, [deviceId, appId, callApi]);
+  }, [deviceId, appId, googleClientId, callApi]);
 
   // -------------------------------------------------------------------------
   // Render
