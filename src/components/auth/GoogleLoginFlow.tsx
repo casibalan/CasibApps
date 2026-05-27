@@ -241,9 +241,36 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
         // Initialize user and create wallet
         await initializeUser(result.userToken, result.encryptionKey, mId);
       } catch (err: unknown) {
-        const message =
+        // Server Actions in production attach the literal "An error
+        // occurred in the Server Components render..." message and a
+        // `digest` property. Translate that to something actionable so
+        // the user is not staring at Next.js's internal wording.
+        const rawMessage =
           err instanceof Error ? err.message : "Post-login setup failed.";
-        setErrorMsg(message);
+        const digest =
+          err && typeof err === "object" && "digest" in err
+            ? (err as { digest?: unknown }).digest
+            : undefined;
+
+        // Surface the digest to the developer console so it can be
+        // matched against Vercel logs without leaking it in the UI.
+        console.error("[CircleLogin] handlePostLogin failed", {
+          rawMessage,
+          digest,
+          name: err instanceof Error ? err.name : undefined,
+        });
+
+        const isProductionServerActionError =
+          rawMessage.includes("Server Components render") ||
+          rawMessage.includes("digest property is included");
+
+        const friendlyMessage = isProductionServerActionError
+          ? "Sign-in succeeded with Google, but the merchant account couldn't be created. " +
+            "This is usually a database configuration issue (missing DATABASE_URL or unmigrated schema). " +
+            "Check Vercel logs for the digest above and verify the production DATABASE_URL, Prisma schema, and merchant session server action."
+          : rawMessage;
+
+        setErrorMsg(friendlyMessage);
         setStep("error");
       }
     },

@@ -46,23 +46,39 @@ export async function setMerchantSession(merchantId: string): Promise<void> {
 
 /**
  * Get the current merchant session from cookie.
+ *
+ * If the database lookup fails (missing DATABASE_URL, unmigrated schema,
+ * transient connection error), this logs the cause to the server and
+ * returns null so the calling page can render the unauthenticated UI
+ * instead of crashing into Next.js's production error boundary.
  */
 export async function getMerchantSession(): Promise<MerchantSession | null> {
   const cookieStore = await cookies();
   const merchantId = cookieStore.get(SESSION_COOKIE)?.value;
   if (!merchantId) return null;
 
-  const merchant = await prisma.merchant.findUnique({
-    where: { id: merchantId },
-  });
-  if (!merchant) return null;
+  try {
+    const merchant = await prisma.merchant.findUnique({
+      where: { id: merchantId },
+    });
+    if (!merchant) return null;
 
-  return {
-    merchantId: merchant.id,
-    merchantName: merchant.businessName ?? merchant.name,
-    email: merchant.email,
-    walletAddress: merchant.walletAddress,
-  };
+    return {
+      merchantId: merchant.id,
+      merchantName: merchant.businessName ?? merchant.name,
+      email: merchant.email,
+      walletAddress: merchant.walletAddress,
+    };
+  } catch (err) {
+    console.error("[auth-actions] getMerchantSession lookup failed", {
+      databaseUrlConfigured: Boolean(process.env.DATABASE_URL),
+      cause:
+        err instanceof Error
+          ? { name: err.name, message: err.message }
+          : err,
+    });
+    return null;
+  }
 }
 
 /**
@@ -90,50 +106,71 @@ type UpsertMerchantInput = {
  * - If a merchant with this email exists, update their record with circleUserId.
  * - Otherwise, create a new merchant.
  * - Returns the merchant ID for session storage.
+ *
+ * Errors (e.g. missing DATABASE_URL, unmigrated schema, network) are logged
+ * to the server before being rethrown. In production, Next.js wraps the
+ * rethrown error with a digest message — the server log lets you correlate
+ * the digest from the client with the real cause.
  */
 export async function upsertMerchantFromCircleLogin(
   input: UpsertMerchantInput
 ): Promise<{ merchantId: string; isNew: boolean }> {
   const { circleUserId, email, name } = input;
 
-  // Try to find existing merchant by email first
-  if (email) {
-    const existing = await prisma.merchant.findUnique({
-      where: { email },
-    });
-
-    if (existing) {
-      // Update existing merchant — no need to create a new one
-      await prisma.merchant.update({
-        where: { id: existing.id },
-        data: {
-          // Store circleUserId in name field prefix for tracking (lightweight)
-          // In production, add a circleUserId column
-          updatedAt: new Date(),
-        },
+  try {
+    // Try to find existing merchant by email first
+    if (email) {
+      const existing = await prisma.merchant.findUnique({
+        where: { email },
       });
 
-      // Set session
-      await setMerchantSession(existing.id);
-      return { merchantId: existing.id, isNew: false };
+      if (existing) {
+        // Update existing merchant — no need to create a new one
+        await prisma.merchant.update({
+          where: { id: existing.id },
+          data: {
+            // Store circleUserId in name field prefix for tracking (lightweight)
+            // In production, add a circleUserId column
+            updatedAt: new Date(),
+          },
+        });
+
+        // Set session
+        await setMerchantSession(existing.id);
+        return { merchantId: existing.id, isNew: false };
+      }
     }
+
+    // Create new merchant
+    const displayName = name ?? email?.split("@")[0] ?? "Merchant";
+    const merchantEmail = email ?? `circle_${circleUserId}@casibapps.local`;
+
+    const merchant = await prisma.merchant.create({
+      data: {
+        name: displayName,
+        email: merchantEmail,
+        businessName: displayName,
+      },
+    });
+
+    // Set session
+    await setMerchantSession(merchant.id);
+    return { merchantId: merchant.id, isNew: true };
+  } catch (err) {
+    // Surface the real cause to server logs so the client digest can
+    // be correlated. The production "An error occurred in the Server
+    // Components render..." message hides this from the client.
+    console.error("[auth-actions] upsertMerchantFromCircleLogin failed", {
+      hasEmail: Boolean(email),
+      circleUserIdLength: circleUserId.length,
+      databaseUrlConfigured: Boolean(process.env.DATABASE_URL),
+      cause:
+        err instanceof Error
+          ? { name: err.name, message: err.message, stack: err.stack }
+          : err,
+    });
+    throw err;
   }
-
-  // Create new merchant
-  const displayName = name ?? email?.split("@")[0] ?? "Merchant";
-  const merchantEmail = email ?? `circle_${circleUserId}@casibapps.local`;
-
-  const merchant = await prisma.merchant.create({
-    data: {
-      name: displayName,
-      email: merchantEmail,
-      businessName: displayName,
-    },
-  });
-
-  // Set session
-  await setMerchantSession(merchant.id);
-  return { merchantId: merchant.id, isNew: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -147,8 +184,20 @@ export async function storeMerchantWalletAddress(
   merchantId: string,
   walletAddress: string
 ): Promise<void> {
-  await prisma.merchant.update({
-    where: { id: merchantId },
-    data: { walletAddress },
-  });
+  try {
+    await prisma.merchant.update({
+      where: { id: merchantId },
+      data: { walletAddress },
+    });
+  } catch (err) {
+    console.error("[auth-actions] storeMerchantWalletAddress failed", {
+      merchantIdLength: merchantId.length,
+      databaseUrlConfigured: Boolean(process.env.DATABASE_URL),
+      cause:
+        err instanceof Error
+          ? { name: err.name, message: err.message }
+          : err,
+    });
+    throw err;
+  }
 }
