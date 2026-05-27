@@ -85,9 +85,17 @@ export function GoogleLoginFlow({ appId }: GoogleLoginFlowProps) {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(
-          data.message ?? data.error ?? `API error (${res.status})`
-        );
+        // Build a detailed error message including hint if available
+        const parts: string[] = [];
+        if (data.message) parts.push(data.message);
+        else if (data.error) parts.push(data.error);
+        else parts.push(`API error (${res.status})`);
+        if (data.hint) parts.push(`\n${data.hint}`);
+
+        const err = new Error(parts.join(""));
+        // Attach debug info for console
+        console.error(`[CircleAPI] ${action} failed:`, data);
+        throw err;
       }
       return data;
     },
@@ -390,7 +398,7 @@ export function GoogleLoginFlow({ appId }: GoogleLoginFlowProps) {
     return (
       <div className="space-y-4">
         <div className="rounded-2xl border border-red-400/20 bg-red-500/10 p-5">
-          <p className="text-sm text-red-300">{errorMsg}</p>
+          <p className="text-sm text-red-300 whitespace-pre-line">{errorMsg}</p>
         </div>
         <button
           onClick={() => {
