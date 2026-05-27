@@ -574,10 +574,37 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
 
         // Get deviceId — but do NOT overwrite step if we're processing
         // an OAuth callback. The SDK will call onLoginComplete instead.
-        const id = await sdk.getDeviceId();
-        if (!cancelled) {
-          setDeviceId(id);
-          if (!hasOAuthCallback) {
+        //
+        // Critical: on the OAuth callback path we MUST NOT call
+        // sdk.getDeviceId(). The SDK uses a single iframe instance; the
+        // synchronous run of setupInstance() above already pointed
+        // iframe.src at /social/verify-token. Calling getDeviceId() now
+        // would re-point iframe.src at /device-id and silently kill the
+        // verification before it can post onSocialLoginVerified.
+        // (Pattern verified against the working WizPay implementation.)
+        if (!hasOAuthCallback) {
+          // Prefer the cached deviceId (avoids re-loading the SDK
+          // iframe on every fresh page view).
+          let id = "";
+          try {
+            id = window.localStorage.getItem("casib.circle.device-id") ?? "";
+          } catch {
+            // Storage may be unavailable; fall through to fetch.
+          }
+
+          if (!id) {
+            id = await sdk.getDeviceId();
+            try {
+              if (id) {
+                window.localStorage.setItem("casib.circle.device-id", id);
+              }
+            } catch {
+              // Non-fatal.
+            }
+          }
+
+          if (!cancelled) {
+            setDeviceId(id);
             setStep("ready");
             setStatusMsg("Ready to sign in.");
           }
