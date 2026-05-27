@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { createWalletClient, custom, parseUnits } from "viem";
+import { createPublicClient, createWalletClient, custom, http } from "viem";
 import { confirmInvoicePayment } from "@/lib/actions";
 import {
   ARC_TESTNET_CHAIN_ID,
@@ -12,7 +12,7 @@ import {
   getArcscanTxUrl,
   USDC_TOKEN_ADDRESS,
 } from "@/lib/arc-contract";
-import { getInvoiceBytes32 } from "@/lib/payments";
+import { getInvoiceBytes32, getUsdcBaseUnits } from "@/lib/payment-utils";
 import type { Invoice } from "@/lib/types";
 
 type EthereumProvider = {
@@ -68,6 +68,10 @@ export function PayInvoiceButton({ invoice, merchantWalletAddress }: PayInvoiceB
         chain: arcTestnet,
         transport: custom(window.ethereum),
       });
+      const publicClient = createPublicClient({
+        chain: arcTestnet,
+        transport: http(),
+      });
 
       const [account] = await walletClient.requestAddresses();
       const currentChainId = await walletClient.getChainId();
@@ -76,7 +80,7 @@ export function PayInvoiceButton({ invoice, merchantWalletAddress }: PayInvoiceB
         await walletClient.switchChain({ id: ARC_TESTNET_CHAIN_ID });
       }
 
-      const amount = parseUnits(invoice.amount.toFixed(6), 6);
+      const amount = getUsdcBaseUnits(invoice.amount);
       const invoiceId = getInvoiceBytes32(invoice.id);
 
       setStatus("approving");
@@ -88,7 +92,7 @@ export function PayInvoiceButton({ invoice, merchantWalletAddress }: PayInvoiceB
         args: [CASIB_INVOICE_ESCROW_ADDRESS, amount],
       });
 
-      await walletClient.waitForTransactionReceipt({ hash: approveHash });
+      await publicClient.waitForTransactionReceipt({ hash: approveHash });
 
       setStatus("paying");
       const paymentHash = await walletClient.writeContract({
@@ -100,7 +104,7 @@ export function PayInvoiceButton({ invoice, merchantWalletAddress }: PayInvoiceB
       });
 
       setTxHash(paymentHash);
-      await walletClient.waitForTransactionReceipt({ hash: paymentHash });
+      await publicClient.waitForTransactionReceipt({ hash: paymentHash });
 
       setStatus("confirming");
       startTransition(async () => {
