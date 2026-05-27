@@ -307,7 +307,9 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
       } catch (err) {
         if (!cancelled) {
           console.error("SDK init failed:", err);
-          setErrorMsg("Failed to initialize Circle SDK.");
+          const detail =
+            err instanceof Error ? err.message : "Unknown error";
+          setErrorMsg(`Failed to initialize Circle SDK: ${detail}`);
           setStep("error");
         }
       }
