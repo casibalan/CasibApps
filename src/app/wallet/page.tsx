@@ -1,7 +1,4 @@
-import { CircleWalletStatus } from "@/components/circle/CircleWalletStatus";
-import { CircleWalletSetup } from "@/components/circle/CircleWalletSetup";
 import { getMerchantById } from "@/lib/queries";
-import { getCircleEnvStatus } from "@/lib/circle";
 import { requireAuth } from "@/lib/auth-guard";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +8,6 @@ export default async function WalletPage() {
   const session = await requireAuth();
 
   const merchant = await getMerchantById(session.merchantId);
-  const circleEnv = getCircleEnvStatus();
 
   if (!merchant) {
     return (
@@ -79,21 +75,31 @@ export default async function WalletPage() {
             )}
           </div>
 
-          {/* Wallet setup flow — only show if no wallet and Circle is configured */}
-          {!merchant.walletAddress && circleEnv.configured && (
-            <CircleWalletSetup
-              merchantId={merchant.id}
-              merchantName={merchant.businessName ?? merchant.name}
-            />
-          )}
-
-          {/* Circle config status if not configured */}
-          {!merchant.walletAddress && !circleEnv.configured && (
-            <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] p-4">
-              <p className="text-xs font-medium text-amber-200">Circle SDK not configured</p>
-              <p className="mt-1 text-xs text-slate-400">
-                Missing: {circleEnv.missing.join(", ")}
+          {/* Wallet setup guidance for Social Login merchants.
+              The Social Login flow (GoogleLoginFlow) creates the Circle wallet
+              during login. The manual CircleWalletSetup component uses a
+              separate PIN-based flow that is incompatible with Social Login
+              users (causes ApolloError: Forbidden). Instead, direct the user
+              to log out and log back in to re-trigger wallet creation. */}
+          {!merchant.walletAddress && (
+            <div className="rounded-2xl border border-cyan-300/20 bg-cyan-300/[0.06] p-5 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🔑</span>
+                <h3 className="text-sm font-semibold text-cyan-100">
+                  Complete Wallet Setup
+                </h3>
+              </div>
+              <p className="text-xs text-slate-300">
+                Your wallet is created automatically during Google login.
+                If wallet setup didn&apos;t complete, log out and log back in
+                to retry. The Circle SDK will resume wallet creation.
               </p>
+              <a
+                href="/logout"
+                className="block w-full rounded-full bg-cyan-300 px-5 py-3 text-center text-sm font-bold text-slate-950 shadow-lg shadow-cyan-950/40 transition hover:bg-cyan-200"
+              >
+                Log out &amp; retry wallet setup
+              </a>
             </div>
           )}
 
