@@ -160,10 +160,16 @@ export async function upsertMerchantFromCircleLogin(
     // Surface the real cause to server logs so the client digest can
     // be correlated. The production "An error occurred in the Server
     // Components render..." message hides this from the client.
+    const prismaCode =
+      err && typeof err === "object" && "code" in err
+        ? (err as { code?: string }).code
+        : undefined;
     console.error("[auth-actions] upsertMerchantFromCircleLogin failed", {
       hasEmail: Boolean(email),
       circleUserIdLength: circleUserId.length,
       databaseUrlConfigured: Boolean(process.env.DATABASE_URL),
+      databaseUrlLength: process.env.DATABASE_URL?.length ?? 0,
+      prismaErrorCode: prismaCode ?? "N/A",
       cause:
         err instanceof Error
           ? { name: err.name, message: err.message, stack: err.stack }
