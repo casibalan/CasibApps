@@ -175,6 +175,22 @@ export async function POST(request: Request) {
           );
         }
 
+        const requestBody = {
+          idempotencyKey: crypto.randomUUID(),
+          accountType: "SCA",
+          blockchains: ["ARC-TESTNET"],
+        };
+
+        // Sanitized request diagnostics — never log userToken
+        console.log("[circle/social] initializeUser request", {
+          endpoint: "/v1/w3s/user/initialize",
+          hasUserToken: Boolean(userToken),
+          userTokenLength: userToken.length,
+          bodyKeys: Object.keys(requestBody),
+          accountType: requestBody.accountType,
+          blockchains: requestBody.blockchains,
+        });
+
         const response = await fetch(
           `${CIRCLE_BASE_URL}/v1/w3s/user/initialize`,
           {
@@ -184,10 +200,7 @@ export async function POST(request: Request) {
               Authorization: `Bearer ${CIRCLE_API_KEY}`,
               "X-User-Token": userToken,
             },
-            body: JSON.stringify({
-              idempotencyKey: crypto.randomUUID(),
-              accountType: "SCA",
-            }),
+            body: JSON.stringify(requestBody),
           }
         );
 
@@ -198,14 +211,19 @@ export async function POST(request: Request) {
             response.status,
             data as Record<string, unknown>
           );
+
+          // Sanitized error diagnostics
           console.error(
             "[circle/social] initializeUser FAILED:",
             JSON.stringify({
               status: response.status,
               code: parsed.code,
               message: parsed.message,
+              responseKeys: data ? Object.keys(data) : [],
+              dataKeys: data?.data ? Object.keys(data.data as object) : [],
             })
           );
+
           return NextResponse.json(
             {
               error: "Circle API error",
@@ -217,6 +235,10 @@ export async function POST(request: Request) {
             { status: response.status }
           );
         }
+
+        console.log("[circle/social] initializeUser SUCCESS", {
+          hasChallengeId: Boolean(data?.data?.challengeId),
+        });
 
         return NextResponse.json(data.data, { status: 200 });
       }
