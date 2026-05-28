@@ -103,48 +103,44 @@ type UpsertMerchantInput = {
  * Create or update a Merchant record after Circle Social Login.
  *
  * Strategy:
- * - If a merchant with this email exists, update their record with circleUserId.
- * - Otherwise, create a new merchant.
- * - Returns the merchant ID for session storage.
+ * - Compute the canonical merchantEmail (real email or fallback).
+ * - Always look up by merchantEmail — whether real or fallback.
+ * - If found, update updatedAt and return existing merchant.
+ * - If not found, create a new merchant.
+ * - If create races with another request and throws P2002 (unique
+ *   constraint on email), re-query and return the existing merchant.
  *
- * Errors (e.g. missing DATABASE_URL, unmigrated schema, network) are logged
- * to the server before being rethrown. In production, Next.js wraps the
- * rethrown error with a digest message — the server log lets you correlate
- * the digest from the client with the real cause.
+ * Errors are logged to the server before being rethrown. In production,
+ * Next.js wraps the rethrown error with a digest message — the server
+ * log lets you correlate the digest from the client with the real cause.
  */
 export async function upsertMerchantFromCircleLogin(
   input: UpsertMerchantInput
 ): Promise<{ merchantId: string; isNew: boolean }> {
   const { circleUserId, email, name } = input;
 
+  // Compute canonical values up front so lookup and create use the same email.
+  const displayName = name ?? email?.split("@")[0] ?? "Merchant";
+  const merchantEmail = email ?? `circle_${circleUserId}@casibapps.local`;
+
   try {
-    // Try to find existing merchant by email first
-    if (email) {
-      const existing = await prisma.merchant.findUnique({
-        where: { email },
+    // Always look up by the canonical email (real or fallback).
+    const existing = await prisma.merchant.findUnique({
+      where: { email: merchantEmail },
+    });
+
+    if (existing) {
+      // Merchant already exists — touch updatedAt and return.
+      await prisma.merchant.update({
+        where: { id: existing.id },
+        data: { updatedAt: new Date() },
       });
 
-      if (existing) {
-        // Update existing merchant — no need to create a new one
-        await prisma.merchant.update({
-          where: { id: existing.id },
-          data: {
-            // Store circleUserId in name field prefix for tracking (lightweight)
-            // In production, add a circleUserId column
-            updatedAt: new Date(),
-          },
-        });
-
-        // Set session
-        await setMerchantSession(existing.id);
-        return { merchantId: existing.id, isNew: false };
-      }
+      await setMerchantSession(existing.id);
+      return { merchantId: existing.id, isNew: false };
     }
 
-    // Create new merchant
-    const displayName = name ?? email?.split("@")[0] ?? "Merchant";
-    const merchantEmail = email ?? `circle_${circleUserId}@casibapps.local`;
-
+    // No existing merchant — create one.
     const merchant = await prisma.merchant.create({
       data: {
         name: displayName,
@@ -153,17 +149,34 @@ export async function upsertMerchantFromCircleLogin(
       },
     });
 
-    // Set session
     await setMerchantSession(merchant.id);
     return { merchantId: merchant.id, isNew: true };
   } catch (err) {
-    // Surface the real cause to server logs so the client digest can
-    // be correlated. The production "An error occurred in the Server
-    // Components render..." message hides this from the client.
+    // Handle P2002 race condition: another request created the merchant
+    // between our findUnique and create. Re-query and return it.
     const prismaCode =
       err && typeof err === "object" && "code" in err
         ? (err as { code?: string }).code
         : undefined;
+
+    if (prismaCode === "P2002") {
+      console.warn(
+        "[auth-actions] P2002 race on email, re-querying merchant",
+        { merchantEmail: merchantEmail.replace(/^(.{3}).*(@.*)$/, "$1***$2") }
+      );
+
+      const raceWinner = await prisma.merchant.findUnique({
+        where: { email: merchantEmail },
+      });
+
+      if (raceWinner) {
+        await setMerchantSession(raceWinner.id);
+        return { merchantId: raceWinner.id, isNew: false };
+      }
+    }
+
+    // Surface the real cause to server logs so the client digest can
+    // be correlated.
     console.error("[auth-actions] upsertMerchantFromCircleLogin failed", {
       hasEmail: Boolean(email),
       circleUserIdLength: circleUserId.length,
