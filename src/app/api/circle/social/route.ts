@@ -299,7 +299,23 @@ export async function POST(request: Request) {
           );
         }
 
-        return NextResponse.json(data.data, { status: 200 });
+        // Log sanitized response shape for identity debugging.
+        // Never log actual values — only key names and presence booleans.
+        const userData = data.data as Record<string, unknown> | undefined;
+        console.log("[circle/social] getUserInfo response shape", {
+          topLevelKeys: data ? Object.keys(data) : [],
+          dataKeys: userData ? Object.keys(userData) : [],
+          hasId: Boolean(userData?.id),
+          hasUserId: Boolean(userData?.userId),
+          hasEmail: Boolean(userData?.email),
+          hasSocialLoginEmail: Boolean(userData?.socialLoginEmail),
+          hasName: Boolean(userData?.name),
+          hasDisplayName: Boolean(userData?.displayName),
+          idType: typeof userData?.id,
+          idLength: typeof userData?.id === "string" ? userData.id.length : 0,
+        });
+
+        return NextResponse.json(userData ?? data.data, { status: 200 });
       }
 
       // Debug action: check env configuration without calling Circle

@@ -211,24 +211,63 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
       setStatusMsg("Creating your merchant account...");
 
       try {
-        // Get user info from Circle to get email
+        // Get user info from Circle to get email and stable userId
         let email: string | null = null;
         let name: string | null = null;
+        let circleUserId: string | null = null;
 
         try {
           const userInfo = await callApi("getUserInfo", {
             userToken: result.userToken,
           });
-          // Circle user info may contain email from social login
+
+          // Log sanitized shape for diagnostics (keys only, no PII)
+          console.log("[CircleLogin] getUserInfo response shape", {
+            keys: userInfo ? Object.keys(userInfo) : null,
+            hasId: Boolean(userInfo?.id),
+            hasUserId: Boolean(userInfo?.userId),
+            hasEmail: Boolean(userInfo?.email),
+            hasSocialLoginEmail: Boolean(userInfo?.socialLoginEmail),
+            hasName: Boolean(userInfo?.name),
+            hasDisplayName: Boolean(userInfo?.displayName),
+          });
+
+          // Circle user info contains stable `id` field (the Circle userId)
+          circleUserId = userInfo?.id ?? userInfo?.userId ?? null;
           email = userInfo?.email ?? userInfo?.socialLoginEmail ?? null;
-          name = userInfo?.name ?? null;
+          name = userInfo?.name ?? userInfo?.displayName ?? null;
         } catch {
           // getUserInfo may not be available — continue without email
+          console.warn("[CircleLogin] getUserInfo call failed, using SDK result userId");
         }
 
-        // Generate a stable identifier from the userToken for merchant lookup
-        // In production, use Circle's userId from the token claims
-        const circleUserId = result.userToken.slice(0, 32);
+        // Prefer Circle's stable userId from getUserInfo response.
+        // Fall back to SDK result's userId field if available.
+        // Last resort: derive from userToken (not stable across sessions,
+        // but better than nothing).
+        if (!circleUserId) {
+          const sdkResult = result as unknown as Record<string, unknown>;
+          if (typeof sdkResult.userId === "string" && sdkResult.userId) {
+            circleUserId = sdkResult.userId;
+          }
+        }
+
+        if (!circleUserId) {
+          // Absolute fallback — NOT stable across sessions.
+          // This path should not be hit if Circle API is working.
+          console.warn(
+            "[CircleLogin] No stable userId from Circle. " +
+              "Falling back to userToken prefix (not production-safe)."
+          );
+          circleUserId = result.userToken.slice(0, 32);
+        }
+
+        console.log("[CircleLogin] resolved identity", {
+          circleUserIdLength: circleUserId.length,
+          hasEmail: Boolean(email),
+          hasName: Boolean(name),
+          source: circleUserId.length > 32 ? "circle-api" : "fallback",
+        });
 
         const { merchantId: mId } = await upsertMerchantFromCircleLogin({
           circleUserId,
