@@ -69,6 +69,9 @@ const CIRCLE_OAUTH_STATE_KEYS = [
 ] as const;
 const CIRCLE_OAUTH_BACKUP_PREFIX = "casib.circle.oauth.";
 
+// Gate verbose diagnostics — only emit in development builds.
+const DEBUG = process.env.NODE_ENV !== "production";
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -160,6 +163,13 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
       try {
         const data = await callApi("initializeUser", { userToken });
 
+        // Server returns { alreadyInitialized: true } when user was
+        // previously initialized (Circle 155106). Skip challenge.
+        if (data.alreadyInitialized) {
+          await loadAndSyncWallets(userToken, mId);
+          return;
+        }
+
         if (data.challengeId) {
           // Need to execute challenge for wallet creation
           setStep("executing-challenge");
@@ -184,11 +194,15 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
           // Wait briefly for Circle to index the wallet
           await new Promise((r) => setTimeout(r, 2000));
           await loadAndSyncWallets(userToken, mId);
+        } else {
+          // No challengeId and not alreadyInitialized — try loading wallets
+          await loadAndSyncWallets(userToken, mId);
         }
       } catch (err: unknown) {
         const error = err as { message?: string; code?: number };
 
         // Code 155106 = user already initialized → just load wallets
+        // (fallback in case server doesn't handle it)
         if (
           error.message?.includes("155106") ||
           (error as { code?: number }).code === 155106
@@ -222,15 +236,17 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
           });
 
           // Log sanitized shape for diagnostics (keys only, no PII)
-          console.log("[CircleLogin] getUserInfo response shape", {
-            keys: userInfo ? Object.keys(userInfo) : null,
-            hasId: Boolean(userInfo?.id),
-            hasUserId: Boolean(userInfo?.userId),
-            hasEmail: Boolean(userInfo?.email),
-            hasSocialLoginEmail: Boolean(userInfo?.socialLoginEmail),
-            hasName: Boolean(userInfo?.name),
-            hasDisplayName: Boolean(userInfo?.displayName),
-          });
+          if (DEBUG) {
+            console.log("[CircleLogin] getUserInfo response shape", {
+              keys: userInfo ? Object.keys(userInfo) : null,
+              hasId: Boolean(userInfo?.id),
+              hasUserId: Boolean(userInfo?.userId),
+              hasEmail: Boolean(userInfo?.email),
+              hasSocialLoginEmail: Boolean(userInfo?.socialLoginEmail),
+              hasName: Boolean(userInfo?.name),
+              hasDisplayName: Boolean(userInfo?.displayName),
+            });
+          }
 
           // Circle user info contains stable `id` field (the Circle userId)
           circleUserId = userInfo?.id ?? userInfo?.userId ?? null;
@@ -262,12 +278,14 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
           circleUserId = result.userToken.slice(0, 32);
         }
 
-        console.log("[CircleLogin] resolved identity", {
-          circleUserIdLength: circleUserId.length,
-          hasEmail: Boolean(email),
-          hasName: Boolean(name),
-          source: circleUserId.length > 32 ? "circle-api" : "fallback",
-        });
+        if (DEBUG) {
+          console.log("[CircleLogin] resolved identity", {
+            circleUserIdLength: circleUserId.length,
+            hasEmail: Boolean(email),
+            hasName: Boolean(name),
+            source: circleUserId.length > 32 ? "circle-api" : "fallback",
+          });
+        }
 
         const { merchantId: mId } = await upsertMerchantFromCircleLogin({
           circleUserId,
@@ -348,20 +366,17 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
           searchParams.has("error");
 
         if (hasOAuthCallback) {
-          // Sanitized callback shape — keys only, never values.
-          console.log("[CircleLogin] callback url shape", {
-            hasHash: Boolean(window.location.hash),
-            hasSearch: Boolean(window.location.search),
-            hashKeys: Array.from(hashParams.keys()),
-            searchKeys: Array.from(searchParams.keys()),
-          });
+          if (DEBUG) {
+            console.log("[CircleLogin] callback url shape", {
+              hasHash: Boolean(window.location.hash),
+              hasSearch: Boolean(window.location.search),
+              hashKeys: Array.from(hashParams.keys()),
+              searchKeys: Array.from(searchParams.keys()),
+            });
+          }
         }
 
-        // Sanitized hash/search diagnostics. We log a 60-char prefix at
-        // most so we never leak a full id_token/access_token. This runs
-        // whenever the URL has a hash so we can confirm what the SDK saw
-        // (or didn't see) on this load.
-        if (hasOAuthCallback || window.location.hash) {
+        if (DEBUG && (hasOAuthCallback || window.location.hash)) {
           const rawHash = window.location.hash;
           const rawSearch = window.location.search;
           console.log("[CircleLogin] callback hash diagnostics", {
@@ -419,34 +434,35 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
             restored[key] = false;
           }
 
-          console.log("[CircleLogin] restored oauth state", {
-            provider: Boolean(restored.socialLoginProvider),
-            state: Boolean(restored.state),
-            nonce: Boolean(restored.nonce),
-          });
+          if (DEBUG) {
+            console.log("[CircleLogin] restored oauth state", {
+              provider: Boolean(restored.socialLoginProvider),
+              state: Boolean(restored.state),
+              nonce: Boolean(restored.nonce),
+            });
+          }
 
-          // Compare the OAuth state Google returned in the hash with the
-          // state the SDK stored in localStorage before the redirect.
-          // A mismatch here is a likely cause of onLoginComplete silently
-          // failing to fire. Values are fingerprinted (length + 6-char
-          // head + 6-char tail) so we can compare without leaking secrets.
-          const fingerprint = (value: string) =>
-            value
-              ? `${value.length}:${value.slice(0, 6)}:${value.slice(-6)}`
-              : "missing";
+          if (DEBUG) {
+            // Compare the OAuth state Google returned in the hash with the
+            // state the SDK stored in localStorage before the redirect.
+            const fingerprint = (value: string) =>
+              value
+                ? `${value.length}:${value.slice(0, 6)}:${value.slice(-6)}`
+                : "missing";
 
-          const returnedState = hashParams.get("state") ?? "";
-          const storedState = window.localStorage.getItem("state") ?? "";
-          const storedNonce = window.localStorage.getItem("nonce") ?? "";
+            const returnedState = hashParams.get("state") ?? "";
+            const storedState = window.localStorage.getItem("state") ?? "";
+            const storedNonce = window.localStorage.getItem("nonce") ?? "";
 
-          console.log("[CircleLogin] oauth state comparison", {
-            returnedState: fingerprint(returnedState),
-            storedState: fingerprint(storedState),
-            stateMatches: returnedState === storedState,
-            storedNonce: fingerprint(storedNonce),
-            hasIdToken: Boolean(hashParams.get("id_token")),
-            hasAccessToken: Boolean(hashParams.get("access_token")),
-          });
+            console.log("[CircleLogin] oauth state comparison", {
+              returnedState: fingerprint(returnedState),
+              storedState: fingerprint(storedState),
+              stateMatches: returnedState === storedState,
+              storedNonce: fingerprint(storedNonce),
+              hasIdToken: Boolean(hashParams.get("id_token")),
+              hasAccessToken: Boolean(hashParams.get("access_token")),
+            });
+          }
         }
 
         // Restore login config: prefer localStorage, fall back to cookies.
@@ -478,25 +494,23 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
             (getCookie("circle_deviceEncryptionKey") as string) || "";
         }
 
-        // Sanitized diagnostics: did the per-device login config survive
-        // the Google round-trip? Booleans only, never the values.
-        console.log("[CircleLogin] restored device config", {
-          hasStoredLoginConfig: Boolean(storedConfig),
-          hasDeviceToken: Boolean(restoredDeviceToken),
-          hasDeviceEncryptionKey: Boolean(restoredDeviceEncryptionKey),
-          hasDeviceTokenCookie: Boolean(getCookie("circle_deviceToken")),
-          hasDeviceEncryptionKeyCookie: Boolean(
-            getCookie("circle_deviceEncryptionKey")
-          ),
-        });
+        if (DEBUG) {
+          console.log("[CircleLogin] restored device config", {
+            hasStoredLoginConfig: Boolean(storedConfig),
+            hasDeviceToken: Boolean(restoredDeviceToken),
+            hasDeviceEncryptionKey: Boolean(restoredDeviceEncryptionKey),
+            hasDeviceTokenCookie: Boolean(getCookie("circle_deviceToken")),
+            hasDeviceEncryptionKeyCookie: Boolean(
+              getCookie("circle_deviceEncryptionKey")
+            ),
+          });
+        }
 
         if (restoredDeviceToken) setDeviceToken(restoredDeviceToken);
         if (restoredDeviceEncryptionKey)
           setDeviceEncryptionKey(restoredDeviceEncryptionKey);
 
-        // Log the socialLoginProvider value the SDK will read on init.
-        // The SDK only enters its hash-handling branch when this is "Google".
-        if (hasOAuthCallback) {
+        if (hasOAuthCallback && DEBUG) {
           console.log("[CircleLogin] socialLoginProvider snapshot", {
             value: window.localStorage.getItem("socialLoginProvider"),
           });
@@ -504,49 +518,43 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
 
         let loginCompleteDidFire = false;
 
-        // Diagnostic: capture postMessage events from Circle's iframe so
-        // we can see whether the iframe ever loads and posts back. The
-        // SDK uses postMessage to deliver onSocialLoginVerified — if the
-        // iframe is blocked (CSP, third-party cookies, network), this
-        // listener will be silent and onLoginComplete never fires.
-        // Filter to circle/wallet origins to avoid noise from analytics.
-        messageListener = (event: MessageEvent) => {
-          try {
-            const origin = event.origin || "";
-            if (!/circle|wallet/i.test(origin)) return;
+        // Diagnostic: capture postMessage events from Circle's iframe.
+        // Only active in development to avoid console noise in production.
+        if (DEBUG) {
+          messageListener = (event: MessageEvent) => {
+            try {
+              const origin = event.origin || "";
+              if (!/circle|wallet/i.test(origin)) return;
 
-            const data = event.data;
-            const dataType = typeof data;
-            const dataKeys =
-              data && typeof data === "object"
-                ? Object.keys(data as Record<string, unknown>)
-                : [];
-            const firstKey = dataKeys[0];
+              const data = event.data;
+              const dataType = typeof data;
+              const dataKeys =
+                data && typeof data === "object"
+                  ? Object.keys(data as Record<string, unknown>)
+                  : [];
+              const firstKey = dataKeys[0];
 
-            // If the first top-level key is itself an object, peek at
-            // ITS keys too — the SDK contract dispatches on flags like
-            // event.data.onSocialLoginVerified, whose value is
-            // { error, result }. We log only key names, never values.
-            let nestedKeys: string[] | undefined;
-            if (firstKey && data && typeof data === "object") {
-              const inner = (data as Record<string, unknown>)[firstKey];
-              if (inner && typeof inner === "object") {
-                nestedKeys = Object.keys(inner as Record<string, unknown>);
+              let nestedKeys: string[] | undefined;
+              if (firstKey && data && typeof data === "object") {
+                const inner = (data as Record<string, unknown>)[firstKey];
+                if (inner && typeof inner === "object") {
+                  nestedKeys = Object.keys(inner as Record<string, unknown>);
+                }
               }
-            }
 
-            console.log("[CircleLogin] sdk message detail", {
-              origin,
-              dataType,
-              dataKeys,
-              firstKey,
-              nestedKeys,
-            });
-          } catch {
-            // never let diagnostics break the SDK
-          }
-        };
-        window.addEventListener("message", messageListener);
+              console.log("[CircleLogin] sdk message detail", {
+                origin,
+                dataType,
+                dataKeys,
+                firstKey,
+                nestedKeys,
+              });
+            } catch {
+              // never let diagnostics break the SDK
+            }
+          };
+          window.addEventListener("message", messageListener);
+        }
 
         const onLoginComplete = (error: unknown, result: unknown) => {
           loginCompleteDidFire = true;
@@ -556,15 +564,17 @@ export function GoogleLoginFlow({ appId, googleClientId }: GoogleLoginFlowProps)
           }
           if (cancelled) return;
 
-          console.log("[CircleLogin] onLoginComplete fired", {
-            hasError: Boolean(error),
-            errorMessage:
-              error instanceof Error ? error.message : undefined,
-            resultKeys:
-              result && typeof result === "object"
-                ? Object.keys(result as Record<string, unknown>)
-                : null,
-          });
+          if (DEBUG) {
+            console.log("[CircleLogin] onLoginComplete fired", {
+              hasError: Boolean(error),
+              errorMessage:
+                error instanceof Error ? error.message : undefined,
+              resultKeys:
+                result && typeof result === "object"
+                  ? Object.keys(result as Record<string, unknown>)
+                  : null,
+            });
+          }
 
           if (error) {
             const err = error as { message?: string; code?: number };

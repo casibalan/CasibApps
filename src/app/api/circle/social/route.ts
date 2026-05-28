@@ -103,16 +103,6 @@ export async function POST(request: Request) {
           deviceId,
         };
 
-        console.log(
-          "[circle/social] createDeviceToken → POST /v1/w3s/users/social/token",
-          {
-            deviceId: deviceId.slice(0, 12) + "...",
-            hasApiKey: !!CIRCLE_API_KEY,
-            apiKeyPrefix: CIRCLE_API_KEY.slice(0, 8) + "...",
-            appId: CIRCLE_APP_ID || "(not set)",
-          }
-        );
-
         const response = await fetch(
           `${CIRCLE_BASE_URL}/v1/w3s/users/social/token`,
           {
@@ -162,7 +152,6 @@ export async function POST(request: Request) {
           );
         }
 
-        console.log("[circle/social] createDeviceToken SUCCESS");
         return NextResponse.json(data.data, { status: 200 });
       }
 
@@ -180,16 +169,6 @@ export async function POST(request: Request) {
           accountType: "SCA",
           blockchains: ["ARC-TESTNET"],
         };
-
-        // Sanitized request diagnostics — never log userToken
-        console.log("[circle/social] initializeUser request", {
-          endpoint: "/v1/w3s/user/initialize",
-          hasUserToken: Boolean(userToken),
-          userTokenLength: userToken.length,
-          bodyKeys: Object.keys(requestBody),
-          accountType: requestBody.accountType,
-          blockchains: requestBody.blockchains,
-        });
 
         const response = await fetch(
           `${CIRCLE_BASE_URL}/v1/w3s/user/initialize`,
@@ -212,15 +191,20 @@ export async function POST(request: Request) {
             data as Record<string, unknown>
           );
 
-          // Sanitized error diagnostics
+          // 155106 = user already initialized — not an error, return success
+          if (parsed.code === 155106) {
+            return NextResponse.json(
+              { challengeId: null, alreadyInitialized: true },
+              { status: 200 }
+            );
+          }
+
           console.error(
             "[circle/social] initializeUser FAILED:",
             JSON.stringify({
               status: response.status,
               code: parsed.code,
               message: parsed.message,
-              responseKeys: data ? Object.keys(data) : [],
-              dataKeys: data?.data ? Object.keys(data.data as object) : [],
             })
           );
 
@@ -235,10 +219,6 @@ export async function POST(request: Request) {
             { status: response.status }
           );
         }
-
-        console.log("[circle/social] initializeUser SUCCESS", {
-          hasChallengeId: Boolean(data?.data?.challengeId),
-        });
 
         return NextResponse.json(data.data, { status: 200 });
       }
@@ -321,22 +301,8 @@ export async function POST(request: Request) {
           );
         }
 
-        // Log sanitized response shape for identity debugging.
-        // Never log actual values — only key names and presence booleans.
+        // Return user data for identity resolution
         const userData = data.data as Record<string, unknown> | undefined;
-        console.log("[circle/social] getUserInfo response shape", {
-          topLevelKeys: data ? Object.keys(data) : [],
-          dataKeys: userData ? Object.keys(userData) : [],
-          hasId: Boolean(userData?.id),
-          hasUserId: Boolean(userData?.userId),
-          hasEmail: Boolean(userData?.email),
-          hasSocialLoginEmail: Boolean(userData?.socialLoginEmail),
-          hasName: Boolean(userData?.name),
-          hasDisplayName: Boolean(userData?.displayName),
-          idType: typeof userData?.id,
-          idLength: typeof userData?.id === "string" ? userData.id.length : 0,
-        });
-
         return NextResponse.json(userData ?? data.data, { status: 200 });
       }
 

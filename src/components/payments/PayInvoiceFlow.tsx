@@ -1,5 +1,17 @@
 "use client";
 
+/**
+ * PayInvoiceFlow — Payer checkout using external injected wallet.
+ *
+ * Current architecture:
+ * - Payer connects via window.ethereum (MetaMask, Rabby, etc.)
+ * - Approves USDC spend → calls payInvoice on Arc escrow contract
+ * - Merchant receives USDC at their Circle Wallet address
+ *
+ * Future: Add Circle Wallet / embedded wallet as primary payer option.
+ * This external wallet flow will remain as an alternative payment method.
+ */
+
 import { useState, useCallback } from "react";
 import {
   createWalletClient,
